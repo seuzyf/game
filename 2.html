@@ -1,0 +1,1094 @@
+function startGame() {
+    if(!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    if(audioCtx.state === 'suspended') audioCtx.resume();
+    killFeed = [];
+    let sv = 0; [...pData.backpack, ...pData.safeBox, pData.eqWeapon, pData.eqArmor, pData.eqHelmet].filter(Boolean).forEach(i => sv += getItemValue(i));
+    document.getElementById('stashUI').classList.remove('active'); document.getElementById('hudUI').classList.add('active');
+    document.getElementById('killFeed').innerHTML = '';
+    generateMap(); initPlayerRaidState(sv);
+    gameState.inRaid = true; gameState.paused = false; gameState.isShooting = false;
+    showMsg("成功部署！安全撤离点已标记。");
+}
+
+function initPlayerRaidState(startVal) {
+    player.x = 200; player.y = 200;
+    
+    let hpMult = 1, stamMult = 1, speedMult = 1;
+    if(selectedOperator) {
+        hpMult = selectedOperator.stats.hp / 100;
+        stamMult = selectedOperator.stats.stam / 100;
+        speedMult = selectedOperator.stats.speed / 100;
+    }
+    
+    player.hp = CFG.PLAYER_MAX_HP * hpMult; 
+    player.stam = CFG.PLAYER_MAX_STAM * stamMult;
+    player.maxHp = player.hp;
+    player.maxStam = player.stam;
+    player.baseSpeedMult = speedMult;
+    
+    player.weaponDur = pData.eqWeapon ? pData.eqWeapon.dur : 0; player.armorDur = pData.eqArmor ? pData.eqArmor.dur : 0; player.helmDur = pData.eqHelmet ? pData.eqHelmet.dur : 0;
+    player.ammoLoaded = 0; calcTotalAmmo();
+    if(pData.eqWeapon) {
+        let mag = ITEM_DB[pData.eqWeapon.id].mag;
+        if(player.ammoTotal >= mag) { player.ammoLoaded = mag; deductAmmo(mag); } else { player.ammoLoaded = player.ammoTotal; deductAmmo(player.ammoTotal); }
+    }
+    gameState.timeRemain = CFG.RAID_TIME; gameState.stats = { kills: 0, loots: 0, startValue: startVal };
+    gameState.extracting = false; gameState.extractTimer = 0; gameState.searching = false;
+    updateHUD();
+}
+
+function generateMap() {
+    mapEntities = { walls: [], containers: [], enemies: [], bullets: [], particles: [], extracts: [], corpses: [], smokeGrenades: [], zones: [], hazards: [] };
+    mapEntities.walls.push({x:0, y:0, w:CFG.MAP_W, h:50}, {x:0, y:CFG.MAP_H-50, w:CFG.MAP_W, h:50}, {x:0, y:0, w:50, h:CFG.MAP_H}, {x:CFG.MAP_W-50, y:0, w:50, h:CFG.MAP_H});
+    
+    mapEntities.zones.push({x: 200, y: 200, w: 600, h: 600, type: 'military', name: '军事禁区', color: 'rgba(139,69,19,0.15)'});
+    mapEntities.zones.push({x: CFG.MAP_W - 800, y: 200, w: 600, h: 600, type: 'industrial', name: '工业区', color: 'rgba(100,100,100,0.15)'});
+    mapEntities.zones.push({x: 200, y: CFG.MAP_H - 800, w: 600, h: 600, type: 'residential', name: '居民区', color: 'rgba(0,100,0,0.15)'});
+    
+    let buildingCount = randInt(25, 40);
+    for(let i=0; i<buildingCount; i++) {
+        let w = randInt(80, 350), h = randInt(80, 350), x = randInt(100, CFG.MAP_W - w - 100), y = randInt(100, CFG.MAP_H - h - 100);
+        if(x<350 && y<350) continue;
+        let inZone = mapEntities.zones.some(z => x < z.x + z.w && x + w > z.x && y < z.y + z.h && y + h > z.y);
+        if(inZone && Math.random() < 0.7) {
+            let wallCount = randInt(1, 4);
+            for(let j=0; j<wallCount; j++) {
+                let wx = x + randInt(20, w-60), wy = y + randInt(20, h-60);
+                mapEntities.walls.push({x: wx, y: wy, w: randInt(40, 120), h: randInt(10, 30)});
+            }
+        } else {
+            mapEntities.walls.push({x, y, w, h});
+        }
+    }
+    
+    for(let i=0; i<15; i++) {
+        let x = randInt(300, CFG.MAP_W-300), y = randInt(300, CFG.MAP_H-300);
+        if(!mapEntities.walls.some(w => x > w.x - 40 && x < w.x + w.w + 40 && y > w.y - 40 && y < w.y + w.h + 40)) {
+            mapEntities.hazards.push({x, y, r: randInt(30, 60), type: 'fire', damage: 5, life: 600});
+        }
+    }
+    
+    let containerTypes = ['box', 'weapon_case', 'safe', 'ammo_crate', 'medical_box', 'locker'];
+    let containerWeights = { box: 0.35, weapon_case: 0.2, safe: 0.1, ammo_crate: 0.15, medical_box: 0.12, locker: 0.08 };
+    for(let i=0; i<CFG.CONTAINER_COUNT; i++) {
+        let x = randInt(100, CFG.MAP_W-100), y = randInt(100, CFG.MAP_H-100);
+        let r = Math.random(), cType;
+        if(r < containerWeights.box) cType = 'box';
+        else if(r < containerWeights.box + containerWeights.weapon_case) cType = 'weapon_case';
+        else if(r < containerWeights.box + containerWeights.weapon_case + containerWeights.safe) cType = 'safe';
+        else if(r < containerWeights.box + containerWeights.weapon_case + containerWeights.safe + containerWeights.ammo_crate) cType = 'ammo_crate';
+        else if(r < containerWeights.box + containerWeights.weapon_case + containerWeights.safe + containerWeights.ammo_crate + containerWeights.medical_box) cType = 'medical_box';
+        else cType = 'locker';
+        
+        let cSize = cType === 'safe' ? 35 : (cType === 'ammo_crate' ? 50 : 40);
+        mapEntities.containers.push({ x, y, w: cSize, h: cSize, type: cType, items: generateLoot(cType), opened: false, searched: false });
+    }
+    
+    mapEntities.extracts.push({x: CFG.MAP_W - 250, y: CFG.MAP_H - 250, r: 120, type: 'safe', name: '安全撤离'}, {x: CFG.MAP_W - 250, y: 250, r: 100, type: 'hot', name: '危险撤离'}, {x: 250, y: CFG.MAP_H - 250, r: 100, type: 'hot', name: '危险撤离'}, {x: CFG.MAP_W/2, y: 150, r: 80, type: '暗示', name: '暗示撤离'});
+    spawnEnemies(Math.floor(CFG.ENEMY_COUNT * DIFFICULTY[selectedDifficulty].enemyCountMult));
+}
+
+function generateLoot(containerType) {
+    let items = [], num = randInt(1, 4), pool = Object.keys(ITEM_DB);
+    for(let i=0; i<num; i++) {
+        let randKey = pool[randInt(0, pool.length-1)]; let dbItem = ITEM_DB[randKey];
+        if(containerType === 'safe') { if(dbItem.tier < 2) continue; } 
+        else if(containerType === 'weapon_case') { if(dbItem.type !== 'weapon') continue; }
+        else if(containerType === 'ammo_crate') { if(dbItem.type !== 'ammo') continue; }
+        else if(containerType === 'medical_box') { if(dbItem.type !== 'med') continue; }
+        else if(containerType === 'locker') { if(dbItem.type !== 'weapon' && dbItem.type !== 'armor' && dbItem.type !== 'helmet') continue; }
+        else { if(dbItem.tier > 3) continue; } 
+        let itm = {id: randKey, revealed: false}; 
+        if(dbItem.type === 'weapon') itm.dur = dbItem.dur; if(dbItem.type === 'armor' || dbItem.type === 'helmet') itm.dur = dbItem.maxDur;
+        if(dbItem.type === 'ammo') itm.count = randInt(10, dbItem.count);
+        items.push(itm);
+    }
+    return items;
+}
+
+// ---- 新增: AI动态分配武器与换弹数据 ----
+function spawnEnemies(count) {
+    const diff = DIFFICULTY[selectedDifficulty];
+    const types = ['patrol', 'assault', 'sniper', 'heavy'];
+    const typeWeights = { patrol: 0.35, assault: 0.3, sniper: 0.2, heavy: 0.15 };
+    for(let i=0; i<count; i++) {
+        let r = Math.random();
+        let type = r < typeWeights.patrol ? 'patrol' : (r < typeWeights.patrol + typeWeights.assault ? 'assault' : (r < typeWeights.patrol + typeWeights.assault + typeWeights.sniper ? 'sniper' : 'heavy'));
+        
+        let x, y;
+        if(Math.random() < 0.6 && mapEntities.zones.length > 0) {
+            let zone = mapEntities.zones[randInt(0, mapEntities.zones.length - 1)];
+            x = randInt(zone.x + 50, zone.x + zone.w - 50);
+            y = randInt(zone.y + 50, zone.y + zone.h - 50);
+        } else {
+            x = randInt(500, CFG.MAP_W-100); y = randInt(500, CFG.MAP_H-100);
+        }
+        
+        let hpMult = diff.enemySpeedMult > 1 ? 1.2 : 0.8;
+        let hp = Math.floor((type === 'heavy' ? 250 : (type === 'sniper' ? 90 : 100)) * hpMult);
+        
+        let wId = 'w_smg';
+        if(type === 'sniper') wId = Math.random() > 0.5 ? 'w_sniper' : 'w_dmr';
+        else if(type === 'heavy') wId = Math.random() > 0.4 ? (Math.random() > 0.5 ? 'w_ak' : 'w_fal') : 'w_lmg';
+        else if(type === 'assault') wId = Math.random() > 0.4 ? (Math.random() > 0.5 ? 'w_ar' : 'w_aug') : (Math.random() > 0.5 ? 'w_ak' : 'w_fal');
+        else wId = Math.random() > 0.5 ? (Math.random() > 0.5 ? 'w_smg' : 'w_vector') : 'w_shotgun';
+        
+        let wData = ITEM_DB[wId];
+        let accuracy = type === 'sniper' ? 0.88 : (type === 'heavy' ? 0.65 : 0.72);
+        if(selectedDifficulty === 'topsecret') accuracy += 0.08;
+        
+        let moveSpeed = type === 'heavy' ? 1.5 : (type === 'sniper' ? 1.8 : 2.5);
+        moveSpeed *= diff.enemySpeedMult;
+        
+        let fireRateMult = diff.enemyFireRateMult;
+        
+        mapEntities.enemies.push({ 
+            x, y, r:15, hp, maxHp: hp, type, state: 'idle', targetX:x, targetY:y, lastFire: 0,
+            weaponId: wId, mag: wData.mag, ammoLoaded: wData.mag, reloading: false, reloadTimer: 0,
+            accuracy: accuracy, lastSeenPlayer: 0, patrolPoint: {x, y}, alertLevel: 0, homeZone: null,
+            moveSpeed: moveSpeed, fireRateMult: fireRateMult, dmgMult: diff.enemyDmgMult
+        });
+    }
+}
+
+function handleKeyPress(key) {
+    if(!gameState.inRaid) return;
+    if(key === 'escape') {
+        if(document.getElementById('lootUI').classList.contains('active')) closeLoot();
+        else if(document.getElementById('inventoryUI').classList.contains('active')) closeInventory();
+        else { gameState.paused = !gameState.paused; showMsg(gameState.paused ? "游戏已暂停" : "继续游戏"); }
+    }
+    if(gameState.paused) return;
+    if(key === 'tab') { const inv = document.getElementById('inventoryUI'); if(inv.classList.contains('active')) closeInventory(); else openInventory(); }
+    if(key === 'f') tryLoot(); if(key === 'r') reloadWeapon(); if(key === 'e') useMed(); if(key === 'g') throwGrenade();
+}
+
+function togglePause() {
+    gameState.paused = !gameState.paused;
+    showMsg(gameState.paused ? "游戏已暂停" : "继续游戏");
+}
+
+function tryLoot() {
+    if(gameState.searching) return; 
+    let target = null, minDist = 60;
+    mapEntities.containers.forEach(c => { let d = dist(player.x, player.y, c.x+20, c.y+20); if(d < minDist) { minDist = d; target = c; }});
+    mapEntities.corpses.forEach(c => { let d = dist(player.x, player.y, c.x, c.y); if(d < minDist) { minDist = d; target = c; }});
+    if(target) {
+        if(target.searched) { gameState.paused = true; currentLootTarget = target; openLootUI(target.items); }
+        else { gameState.searching = true; gameState.searchTimer = 0; gameState.searchTarget = target; gameState.searchStartX = player.x; gameState.searchStartY = player.y; AUDIO.playLoot(); }
+    }
+}
+
+let currentLootTarget = null;
+function openLootUI(items) { document.getElementById('lootUI').classList.add('active'); renderLootList(items, 'lootContainerList'); renderLootMyBag(); }
+function closeLoot() { document.getElementById('lootUI').classList.remove('active'); currentLootTarget.opened = true; currentLootTarget = null; gameState.paused = false; }
+
+function renderLootMyBag() {
+    document.getElementById('lootBagWeight').innerText = calcWeight(pData.backpack).toFixed(1);
+    let bagValue = pData.backpack.reduce((sum, item) => sum + getItemValue(item), 0);
+    document.getElementById('lootBagValue').innerText = bagValue.toLocaleString();
+    renderItemList(pData.backpack, 'lootMyBagList', (item, idx) => { 
+        currentLootTarget.items.push(item); pData.backpack.splice(idx, 1); 
+        renderLootList(currentLootTarget.items, 'lootContainerList'); renderLootMyBag(); updateHUD(); 
+    });
+}
+function lootAll() {
+    if(!currentLootTarget) return; let items = currentLootTarget.items;
+    for(let i = items.length - 1; i >= 0; i--) { 
+        if(items[i].revealed !== false && calcWeight(pData.backpack) <= 80) { pData.backpack.push(items[i]); items.splice(i, 1); gameState.stats.loots++; } 
+    }
+    AUDIO.playLoot(); renderLootList(items, 'lootContainerList'); renderLootMyBag(); updateHUD();
+}
+
+function openInventory() { gameState.paused = true; document.getElementById('inventoryUI').classList.add('active'); renderRaidInventory(); }
+function closeInventory() { document.getElementById('inventoryUI').classList.remove('active'); gameState.paused = false; updateHUD(); }
+
+function renderRaidInventory() {
+    let eqW = document.getElementById('invEqWeapon'); eqW.innerHTML = pData.eqWeapon ? `${ITEM_DB[pData.eqWeapon.id].icon} ${ITEM_DB[pData.eqWeapon.id].name}` : '无';
+    eqW.onclick = () => {
+        if(pData.eqWeapon) {
+            if(player.ammoLoaded > 0) { let reqType = ITEM_DB[pData.eqWeapon.id].ammo; pData.backpack.push({id: `a_${reqType.replace('.','')}`, count: player.ammoLoaded}); }
+            pData.backpack.push(pData.eqWeapon); pData.eqWeapon = null; player.ammoLoaded = 0; player.weaponDur = 0; renderRaidInventory(); updateHUD();
+        }
+    };
+    let eqA = document.getElementById('invEqArmor'); eqA.innerHTML = pData.eqArmor ? `${ITEM_DB[pData.eqArmor.id].icon} ${ITEM_DB[pData.eqArmor.id].name}` : '无';
+    eqA.onclick = () => { if(pData.eqArmor) { pData.backpack.push(pData.eqArmor); pData.eqArmor = null; player.armorDur = 0; renderRaidInventory(); updateHUD(); }};
+    let eqH = document.getElementById('invEqHelmet'); eqH.innerHTML = pData.eqHelmet ? `${ITEM_DB[pData.eqHelmet.id].icon} ${ITEM_DB[pData.eqHelmet.id].name}` : '无';
+    eqH.onclick = () => { if(pData.eqHelmet) { pData.backpack.push(pData.eqHelmet); pData.eqHelmet = null; player.helmDur = 0; renderRaidInventory(); updateHUD(); }};
+
+    renderItemList(pData.safeBox, 'invSafeBox', (item, idx) => { pData.backpack.push(item); pData.safeBox.splice(idx,1); renderRaidInventory(); });
+    renderItemList(pData.backpack, 'invBackpack', (item, idx) => {
+        let type = ITEM_DB[item.id].type;
+        if(type === 'weapon') {
+            if(pData.eqWeapon) {
+                if(player.ammoLoaded > 0) { let reqType = ITEM_DB[pData.eqWeapon.id].ammo; pData.backpack.push({id: `a_${reqType.replace('.','')}`, count: player.ammoLoaded}); }
+                pData.backpack.push(pData.eqWeapon); 
+            }
+            pData.eqWeapon = item; pData.backpack.splice(idx, 1); player.weaponDur = pData.eqWeapon.dur; player.ammoLoaded = 0; showMsg("装备已切换");
+        } else if(type === 'armor') {
+            if(pData.eqArmor) pData.backpack.push(pData.eqArmor);
+            pData.eqArmor = item; pData.backpack.splice(idx, 1); player.armorDur = pData.eqArmor.dur; showMsg("装备已切换");
+        } else if(type === 'helmet') {
+            if(pData.eqHelmet) pData.backpack.push(pData.eqHelmet);
+            pData.eqHelmet = item; pData.backpack.splice(idx, 1); player.helmDur = pData.eqHelmet.dur; showMsg("装备已切换");
+        } else {
+            mapEntities.corpses.push({x: player.x, y: player.y, items: [item], searched: true}); pData.backpack.splice(idx, 1); showMsg("物品已丢弃");
+        }
+        renderRaidInventory(); updateHUD();
+    });
+}
+
+function calcTotalAmmo() {
+    player.ammoTotal = 0; if(!pData.eqWeapon) return; let reqType = ITEM_DB[pData.eqWeapon.id].ammo;
+    pData.backpack.forEach(i => { if(ITEM_DB[i.id].type === 'ammo' && i.id === `a_${reqType.replace('.','')}`) player.ammoTotal += i.count; });
+}
+function deductAmmo(amount) {
+    if(!pData.eqWeapon) return; let reqType = ITEM_DB[pData.eqWeapon.id].ammo, need = amount;
+    for(let i=0; i<pData.backpack.length; i++) {
+        let it = pData.backpack[i];
+        if(ITEM_DB[it.id].type === 'ammo' && it.id === `a_${reqType.replace('.','')}`) {
+            if(it.count >= need) { it.count -= need; need = 0; break; } else { need -= it.count; it.count = 0; }
+        }
+    }
+    pData.backpack = pData.backpack.filter(i => i.count !== 0);
+}
+function reloadWeapon() {
+    if(!pData.eqWeapon || player.weaponDur <= 0) return; let wData = ITEM_DB[pData.eqWeapon.id]; if(player.ammoLoaded === wData.mag) return;
+    calcTotalAmmo(); let need = wData.mag - player.ammoLoaded;
+    if(player.ammoTotal > 0) {
+        let load = Math.min(need, player.ammoTotal); player.ammoLoaded += load; deductAmmo(load); AUDIO.playLoot(); showMsg("换弹完成"); updateHUD();
+    } else showMsg("备弹不足");
+}
+function useMed() {
+    let medIdx = pData.backpack.findIndex(i => ITEM_DB[i.id].type === 'med');
+    if(medIdx !== -1) {
+        let med = ITEM_DB[pData.backpack[medIdx].id];
+        if(med.heal) { player.hp = Math.min(CFG.PLAYER_MAX_HP, player.hp + med.heal); showMsg(`使用 ${med.name} 恢复生命`); }
+        if(med.stam) { player.stam = Math.min(CFG.PLAYER_MAX_STAM, player.stam + med.stam); showMsg(`使用 ${med.name} 恢复体力`); }
+        if(med.repair) { player.weaponDur += med.repair; if(pData.eqWeapon) pData.eqWeapon.dur = player.weaponDur; showMsg(`修缮武器`); }
+        pData.backpack.splice(medIdx, 1); AUDIO.playLoot(); updateHUD();
+    } else showMsg("背包没有医疗物资");
+}
+function throwGrenade() {
+    let tIdx = pData.backpack.findIndex(i => ITEM_DB[i.id].type === 'throwable');
+    if(tIdx !== -1) {
+        let gInfo = ITEM_DB[pData.backpack[tIdx].id];
+        if(gInfo.smoke) {
+            let angle = Math.atan2(gameState.mouseY + gameState.camera.y - player.y, gameState.mouseX + gameState.camera.x - player.x);
+            let targetX = player.x + Math.cos(angle) * 300, targetY = player.y + Math.sin(angle) * 300;
+            mapEntities.smokeGrenades.push({x: targetX, y: targetY, radius: 0, maxRadius: gInfo.radius, life: 180});
+            pData.backpack.splice(tIdx, 1); showMsg("投掷烟雾弹！");
+            return;
+        }
+        let angle = Math.atan2(gameState.mouseY + gameState.camera.y - player.y, gameState.mouseX + gameState.camera.x - player.x);
+        let targetX = player.x + Math.cos(angle) * 300, targetY = player.y + Math.sin(angle) * 300;
+        setTimeout(() => {
+            AUDIO.playExplosion(); createParticles(targetX, targetY, '#ff9800', 30);
+            let d = dist(player.x, player.y, targetX, targetY); if(d < gInfo.radius) takeDamage(gInfo.dmg * (1 - d/gInfo.radius));
+            mapEntities.enemies.forEach(e => { let ed = dist(e.x, e.y, targetX, targetY); if(ed < gInfo.radius) { e.hp -= gInfo.dmg * (1 - ed/gInfo.radius); if(e.hp <= 0) killEnemy(e); } });
+        }, 500);
+        pData.backpack.splice(tIdx, 1); showMsg("投掷破片手雷！");
+    }
+}
+function playerFire(isAutoTick = false) {
+    let now = Date.now(); if(!pData.eqWeapon) return; let wData = ITEM_DB[pData.eqWeapon.id];
+    if(now - player.lastFire < (60000 / wData.fireRate)) return;
+    if(player.weaponDur <= 0) { if(!isAutoTick) showMsg("武器已损坏，请维修！"); return; }
+    if(player.ammoLoaded <= 0) { if(!isAutoTick) showMsg("需要换弹！(R)"); return; }
+
+    player.ammoLoaded--; player.weaponDur = Math.max(0, player.weaponDur - 0.2);
+    if(pData.eqWeapon) pData.eqWeapon.dur = Math.floor(player.weaponDur);
+    player.lastFire = now; AUDIO.playShoot(pData.eqWeapon.id);
+
+    let angle = Math.atan2(gameState.mouseY + gameState.camera.y - player.y, gameState.mouseX + gameState.camera.x - player.x);
+    player.angle = angle;
+    let pellets = wData.pellets || 1;
+    for(let i=0; i<pellets; i++) {
+        let spreadStr = (Math.random() - 0.5) * wData.spread;
+        let bx = player.x + Math.cos(angle) * 20, by = player.y + Math.sin(angle) * 20;
+        mapEntities.bullets.push({ x: bx, y: by, dx: Math.cos(angle + spreadStr) * 25, dy: Math.sin(angle + spreadStr) * 25, dmg: wData.dmg, isPlayer: true, trail: [] });
+    }
+    
+    muzzleFlashes.push({x: player.x + Math.cos(angle) * 25, y: player.y + Math.sin(angle) * 25, life: 5});
+    createParticles(player.x + Math.cos(angle) * 25, player.y + Math.sin(angle) * 25, '#ff0', 3);
+    updateHUD();
+}
+function takeDamage(dmg) {
+    if(player.hp <= 0) return;
+    if(gameState.searching) { gameState.searching = false; showMsg("受到攻击，搜索被打断！"); }
+    let isHead = Math.random() < 0.2, actualDmg = dmg;
+    if(isHead && pData.eqHelmet && player.helmDur > 0) { let red = ITEM_DB[pData.eqHelmet.id].reduce; actualDmg *= (1 - red); player.helmDur -= dmg * 0.5; pData.eqHelmet.dur = Math.max(0, Math.floor(player.helmDur));
+    } else if(!isHead && pData.eqArmor && player.armorDur > 0) { let red = ITEM_DB[pData.eqArmor.id].reduce; actualDmg *= (1 - red); player.armorDur -= dmg * 0.5; pData.eqArmor.dur = Math.max(0, Math.floor(player.armorDur)); }
+    player.hp -= actualDmg; AUDIO.playPlayerHit();
+    
+    gameState.lastDamageTime = Date.now();
+    gameState.screenShakeTime = 10;
+    
+    let overlay = document.getElementById('damageOverlay');
+    overlay.style.opacity = Math.min(0.8, dmg / 50);
+    setTimeout(() => overlay.style.opacity = 0, 200);
+    
+    let dmgNum = document.createElement('div');
+    dmgNum.className = 'damage-number';
+    dmgNum.innerText = Math.round(actualDmg);
+    dmgNum.style.left = (player.x - gameState.camera.x + window.innerWidth/2) + 'px';
+    dmgNum.style.top = (player.y - gameState.camera.y + window.innerHeight/2 - 30) + 'px';
+    document.getElementById('gameCanvas').parentElement.appendChild(dmgNum);
+    setTimeout(() => dmgNum.remove(), 800);
+    
+    if(gameState.extracting) { gameState.extracting = false; gameState.extractTimer = 0; document.getElementById('extractBarContainer').style.display = 'none'; showMsg("受到攻击，撤离被打断！"); }
+    if(player.hp <= 0) handleDeath(); updateHUD();
+}
+
+// ---- 新增: AI精准掉落机制 ----
+function killEnemy(enemy) {
+    enemy.hp = 0; gameState.stats.kills++; createParticles(enemy.x, enemy.y, '#f44336', 10);
+    AUDIO.playDeath();
+    
+    addKillFeed(`击杀 ${enemy.type === 'heavy' ? '重装兵' : enemy.type === 'sniper' ? '狙击手' : enemy.type === 'assault' ? '突击兵' : '巡逻兵'}`);
+    
+    let drops = [];
+    drops.push({id: enemy.weaponId, dur: randInt(20, 80)});
+    let ammoType = ITEM_DB[enemy.weaponId].ammo;
+    let dropAmmoId = `a_${ammoType.replace('.','')}`;
+    let dropCount = randInt(10, 40);
+    if(enemy.weaponId === 'w_sniper' || enemy.weaponId === 'w_dmr') dropCount = randInt(5, 10);
+    if(enemy.weaponId === 'w_shotgun') dropCount = randInt(2, 6);
+    drops.push({id: dropAmmoId, count: dropCount});
+    if(enemy.type === 'heavy') drops.push({id: 'ar_2', dur: randInt(20,50)});
+    if(Math.random()<0.25) drops.push({id: 'v_watch'});
+    if(Math.random()<0.1) drops.push({id: 'v_gem'});
+    
+    drops.forEach(d => d.revealed = false); 
+    mapEntities.corpses.push({x: enemy.x, y: enemy.y, items: drops, searched: false});
+}
+
+function addKillFeed(text) {
+    killFeed.push({text, time: Date.now()});
+    if(killFeed.length > 5) killFeed.shift();
+    renderKillFeed();
+}
+
+function renderKillFeed() {
+    let feedEl = document.getElementById('killFeed');
+    feedEl.innerHTML = killFeed.map(k => `<div class="kill-feed-item">${k.text}</div>`).join('');
+}
+
+function handleDeath() { 
+    gameState.inRaid = false; gameState.isShooting = false; AUDIO.playDeath();
+    pData.backpack = []; pData.eqWeapon = null; pData.eqArmor = null; pData.eqHelmet = null; 
+    saveGame();
+    showResult("阵亡 (MIA)", 0); 
+}
+function handleExtract() {
+    gameState.inRaid = false; gameState.isShooting = false; let value = 0;
+    [...pData.backpack, ...pData.safeBox, pData.eqWeapon, pData.eqArmor, pData.eqHelmet].filter(Boolean).forEach(i => value += getItemValue(i));
+    pData.stash.push(...pData.backpack, ...pData.safeBox); pData.backpack = []; pData.safeBox = [];
+    if(pData.eqWeapon) { pData.stash.push(pData.eqWeapon); pData.eqWeapon = null; } if(pData.eqArmor) { pData.stash.push(pData.eqArmor); pData.eqArmor = null; } if(pData.eqHelmet) { pData.stash.push(pData.eqHelmet); pData.eqHelmet = null; }
+    saveGame(); // 撤离自动存档
+    showResult("撤离成功", value);
+}
+
+function showResult(status, val) {
+    document.getElementById('hudUI').classList.remove('active'); let resUI = document.getElementById('resultUI'); resUI.classList.add('active');
+    document.getElementById('resultTitle').innerText = status; document.getElementById('resultTitle').style.color = status === "撤离成功" ? "#4caf50" : "#d32f2f";
+    let net = val - gameState.stats.startValue;
+    document.getElementById('resStatus').innerText = `盈亏: ${net >= 0 ? '+'+net : net} 银币估值`; document.getElementById('resValue').innerText = val; document.getElementById('resKills').innerText = gameState.stats.kills; document.getElementById('resLoots').innerText = gameState.stats.loots;
+}
+
+function returnToStash() { document.getElementById('resultUI').classList.remove('active'); document.getElementById('stashUI').classList.add('active'); renderStashUI(); }
+
+function checkCollisionRectCircle(rx, ry, rw, rh, cx, cy, cr) {
+    let testX = cx, testY = cy; if (cx < rx) testX = rx; else if (cx > rx + rw) testX = rx + rw;
+    if (cy < ry) testY = ry; else if (cy > ry + rh) testY = ry + rh; return Math.hypot(cx - testX, cy - testY) <= cr;
+}
+
+// ---- 新增: 线段与矩形相交检测 (用于 AI 视线检查) ----
+function checkLineIntersectRect(x1, y1, x2, y2, rx, ry, rw, rh) {
+    let dist = Math.hypot(x2 - x1, y2 - y1);
+    let steps = dist / 15; // 每 15 像素采样一次判断是否穿墙
+    for(let i=0; i<=steps; i++) {
+        let px = x1 + (x2 - x1) * (i / steps);
+        let py = y1 + (y2 - y1) * (i / steps);
+        if (px >= rx && px <= rx + rw && py >= ry && py <= ry + rh) return true;
+    }
+    return false;
+}
+function hasLineOfSight(x1, y1, x2, y2) {
+    for(let i=0; i<mapEntities.walls.length; i++) {
+        let w = mapEntities.walls[i];
+        if (checkLineIntersectRect(x1, y1, x2, y2, w.x, w.y, w.w, w.h)) return false;
+    }
+    return true;
+}
+// ---------------------------------------------
+
+function update() {
+    if (currentLootTarget && document.getElementById('lootUI').classList.contains('active')) {
+        let unrevealedIdx = currentLootTarget.items.findIndex(i => i.revealed === false);
+        if (unrevealedIdx !== -1) {
+            let item = currentLootTarget.items[unrevealedIdx]; let dbInfo = ITEM_DB[item.id];
+            let reqTime = dbInfo.tier === 5 ? 4.0 : (dbInfo.tier + 1) * 0.6; 
+            if (!item.revealTimer) item.revealTimer = 0;
+            item.revealTimer += 1/CFG.FPS;
+            let fillEl = document.getElementById(`reveal-fill-${unrevealedIdx}`);
+            if (fillEl) fillEl.style.width = (item.revealTimer / reqTime * 100) + '%';
+            if (item.revealTimer >= reqTime) { item.revealed = true; AUDIO.playLoot(); renderLootList(currentLootTarget.items, 'lootContainerList'); }
+        }
+    }
+
+    if(!gameState.inRaid || gameState.paused) return;
+    
+    if(gameState.isShooting && pData.eqWeapon) { if(ITEM_DB[pData.eqWeapon.id].auto) playerFire(true); }
+    
+    let weight = calcWeight(pData.backpack) + calcWeight(pData.safeBox);
+    if(pData.eqWeapon) weight += ITEM_DB[pData.eqWeapon.id].weight; if(pData.eqArmor) weight += ITEM_DB[pData.eqArmor.id].weight; if(pData.eqHelmet) weight += ITEM_DB[pData.eqHelmet.id].weight;
+    let speedMult = player.baseSpeedMult || 1; if(weight > 20) speedMult -= (weight - 20) * 0.015; speedMult = Math.max(0.2, speedMult);
+    
+    let isShift = gameState.keys['shift'];
+    if(isShift && player.stam > 0 && (gameState.keys['w']||gameState.keys['a']||gameState.keys['s']||gameState.keys['d'])) { player.isRunning = true; speedMult *= CFG.RUN_MULT; player.stam -= (weight > 30 ? 0.4 : 0.2);
+    } else { player.isRunning = false; player.stam = Math.min(player.maxStam || CFG.PLAYER_MAX_STAM, player.stam + 0.1); }
+    
+    let speed = CFG.BASE_SPEED * speedMult, dx = 0, dy = 0;
+    if(gameState.keys['w']) dy -= speed; if(gameState.keys['s']) dy += speed; if(gameState.keys['a']) dx -= speed; if(gameState.keys['d']) dx += speed;
+    if(dx !== 0 && dy !== 0) { dx *= 0.707; dy *= 0.707; }
+
+    let nextX = player.x + dx, nextY = player.y + dy, colX = false, colY = false;
+    mapEntities.walls.forEach(w => {
+        if(checkCollisionRectCircle(w.x, w.y, w.w, w.h, nextX, player.y, player.radius)) colX = true;
+        if(checkCollisionRectCircle(w.x, w.y, w.w, w.h, player.x, nextY, player.radius)) colY = true;
+    });
+    if(!colX) player.x = nextX; if(!colY) player.y = nextY;
+    
+    if(gameState.keys['w'] || gameState.keys['a'] || gameState.keys['s'] || gameState.keys['d']) {
+        player.angle = Math.atan2(gameState.mouseY + gameState.camera.y - player.y, gameState.mouseX + gameState.camera.x - player.x);
+    }
+
+    gameState.camera.x = Math.max(0, Math.min(player.x - window.innerWidth / 2, CFG.MAP_W - window.innerWidth));
+    gameState.camera.y = Math.max(0, Math.min(player.y - window.innerHeight / 2, CFG.MAP_H - window.innerHeight));
+    
+    if(gameState.screenShakeTime > 0) {
+        gameState.screenShakeTime--;
+        let shakeX = (Math.random() - 0.5) * 8, shakeY = (Math.random() - 0.5) * 8;
+        document.getElementById('gameCanvas').style.transform = `translate(${shakeX}px, ${shakeY}px)`;
+    } else {
+        document.getElementById('gameCanvas').style.transform = 'none';
+    }
+
+    if(gameState.searching) {
+        if(dist(player.x, player.y, gameState.searchStartX, gameState.searchStartY) > 5) { gameState.searching = false; showMsg("位移，搜索被打断！");
+        } else {
+            gameState.searchTimer += 1/CFG.FPS;
+            if(gameState.searchTimer >= CFG.SEARCH_TIME) { gameState.searching = false; gameState.searchTarget.searched = true; gameState.paused = true; currentLootTarget = gameState.searchTarget; openLootUI(gameState.searchTarget.items); }
+        }
+    }
+
+    let inExtract = false; let extractHint = document.getElementById('hudExtractHint');
+    mapEntities.extracts.forEach(ex => { if(dist(player.x, player.y, ex.x, ex.y) < ex.r) inExtract = true; });
+    extractHint.style.display = inExtract ? 'block' : 'none';
+    let exUI = document.getElementById('extractBarContainer');
+    if(inExtract) {
+        if(!gameState.extracting) { gameState.extracting = true; gameState.extractTimer = 0; }
+        gameState.extractTimer += 1/CFG.FPS; exUI.style.display = 'block'; document.getElementById('extractBar').style.width = (gameState.extractTimer / CFG.EXTRACT_TIME * 100) + '%';
+        if(gameState.extractTimer >= CFG.EXTRACT_TIME) handleExtract();
+    } else { gameState.extracting = false; gameState.extractTimer = 0; exUI.style.display = 'none'; }
+
+    gameState.timeRemain -= 1/CFG.FPS; if(gameState.timeRemain <= 0) handleDeath();
+
+    for(let i=mapEntities.bullets.length-1; i>=0; i--) {
+        let b = mapEntities.bullets[i];
+        if(!b.trail) b.trail = [];
+        b.trail.push({x: b.x, y: b.y});
+        if(b.trail.length > 5) b.trail.shift();
+        b.x += b.dx; b.y += b.dy;
+        if(mapEntities.walls.some(w => b.x>w.x && b.x<w.x+w.w && b.y>w.y && b.y<w.y+w.h) || b.x<0 || b.x>CFG.MAP_W || b.y<0 || b.y>CFG.MAP_H) { createParticles(b.x, b.y, '#fff', 3); mapEntities.bullets.splice(i, 1); continue; }
+        if(b.isPlayer) {
+            let hitE = mapEntities.enemies.findIndex(e => dist(b.x, b.y, e.x, e.y) < e.r && e.hp > 0);
+            if(hitE !== -1) { 
+                mapEntities.enemies[hitE].hp -= b.dmg; createParticles(b.x, b.y, '#f00', 5); 
+                let eDmg = document.createElement('div');
+                eDmg.className = 'damage-number';
+                eDmg.innerText = Math.round(b.dmg);
+                eDmg.style.left = (mapEntities.enemies[hitE].x - gameState.camera.x + window.innerWidth/2) + 'px';
+                eDmg.style.top = (mapEntities.enemies[hitE].y - gameState.camera.y + window.innerHeight/2 - 30) + 'px';
+                document.getElementById('gameCanvas').parentElement.appendChild(eDmg);
+                setTimeout(() => eDmg.remove(), 800);
+                if(mapEntities.enemies[hitE].hp <= 0) killEnemy(mapEntities.enemies[hitE]); mapEntities.bullets.splice(i, 1); 
+            }
+        } else { if(dist(b.x, b.y, player.x, player.y) < player.radius) { takeDamage(b.dmg); mapEntities.bullets.splice(i, 1); } }
+    }
+    mapEntities.enemies = mapEntities.enemies.filter(e => e.hp > 0);
+    
+    for(let i=mapEntities.smokeGrenades.length-1; i>=0; i--) {
+        let s = mapEntities.smokeGrenades[i];
+        s.life--;
+        if(s.life > 120) s.radius = Math.min(s.maxRadius, s.radius + 3);
+        else if(s.life < 30) s.radius = Math.max(0, s.radius - 3);
+        if(s.life <= 0) mapEntities.smokeGrenades.splice(i, 1);
+    }
+
+    let now = Date.now();
+    let closestEnemyDist = Infinity;
+    mapEntities.enemies.forEach(e => {
+        let d = dist(e.x, e.y, player.x, player.y);
+        if(d < closestEnemyDist) closestEnemyDist = d;
+        let los = hasLineOfSight(e.x, e.y, player.x, player.y);
+        
+        if(d < 600 && los) {
+            if(e.state !== 'chase' && e.alertLevel < 50) {
+                e.alertLevel = 50;
+            }
+            e.state = 'chase'; 
+            e.alertLevel = Math.min(100, e.alertLevel + 3); 
+            e.lastSeenPlayer = now; 
+            if(Math.random() < 0.3) {
+                mapEntities.enemies.forEach(ne => {
+                    if(ne !== e && dist(ne.x, ne.y, e.x, e.y) < 400) {
+                        ne.alertLevel = Math.min(100, ne.alertLevel + 30);
+                        ne.lastKnownPlayerX = player.x;
+                        ne.lastKnownPlayerY = player.y;
+                    }
+                });
+            }
+        } 
+        else if (d > 900 || !los) { 
+            if(e.alertLevel > 30) {
+                e.state = 'alert';
+                e.lastKnownPlayerX = player.x;
+                e.lastKnownPlayerY = player.y;
+            } else {
+                e.state = 'idle'; 
+            }
+            e.alertLevel = Math.max(0, e.alertLevel - 1); 
+        }
+        else { e.alertLevel = Math.max(0, e.alertLevel - 0.5); }
+
+        if(e.state === 'chase') {
+            e.targetX = player.x; e.targetY = player.y; 
+            let moveSpeed = e.moveSpeed || (e.type === 'heavy' ? 1.5 : (e.type === 'sniper' ? 1.8 : 2.5));
+            let nx = e.x, ny = e.y;
+            
+            if(d > 200 || (e.type === 'sniper' && d < 400)) { 
+                let angle = Math.atan2(e.targetY - e.y, e.targetX - e.x); 
+                if(e.type === 'sniper' && d < 400) angle += Math.PI; 
+                let stepMove = moveSpeed * (e.type === 'heavy' ? 0.8 : 1);
+                nx += Math.cos(angle) * stepMove; ny += Math.sin(angle) * stepMove; 
+            }
+            
+            let cx=false, cy=false;
+            mapEntities.walls.forEach(w => {
+                if(checkCollisionRectCircle(w.x, w.y, w.w, w.h, nx, e.y, e.r)) cx = true;
+                if(checkCollisionRectCircle(w.x, w.y, w.w, w.h, e.x, ny, e.r)) cy = true;
+            });
+            if(!cx) e.x = nx;
+            if(!cy) e.y = ny;
+
+            if(e.reloading) {
+                e.reloadTimer += 1/CFG.FPS;
+                if(e.reloadTimer >= 2.5) {
+                    e.reloading = false;
+                    e.ammoLoaded = e.mag;
+                }
+            } else {
+                let wData = ITEM_DB[e.weaponId];
+                let fireRateMult = e.fireRateMult || 1;
+                let fireRateLimit = (e.type === 'sniper' ? 2000 : (60000 / wData.fireRate * 2)) * fireRateMult;
+                let effectiveRange = e.type === 'sniper' ? 800 : (e.type === 'heavy' ? 350 : 400);
+                let strafeDir = Math.sin(now * 0.002) > 0 ? 1 : -1;
+                if(d < effectiveRange && los && now - e.lastFire > fireRateLimit) {
+                    e.lastFire = now; 
+                    e.ammoLoaded--;
+                    
+                    let baseAngle = Math.atan2(player.y - e.y, player.x - e.x);
+                    let aimError = (1 - e.accuracy) * 0.3 * (d > 300 ? 1.5 : 1);
+                    let strafeOffset = e.type !== 'sniper' ? strafeDir * 0.1 : 0;
+                    let aimAngle = baseAngle + (Math.random() - 0.5) * aimError + strafeOffset;
+                    let dmg = wData.dmg * 0.5 * (e.dmgMult || 1);
+                    mapEntities.bullets.push({ x: e.x, y: e.y, dx: Math.cos(aimAngle)*12, dy: Math.sin(aimAngle)*12, dmg: dmg, isPlayer: false, trail: [] });
+                    muzzleFlashes.push({x: e.x + Math.cos(aimAngle) * 20, y: e.y + Math.sin(aimAngle) * 20, life: 3});
+                    AUDIO.playShoot(e.weaponId);
+                    
+                    if(e.ammoLoaded <= 0) { e.reloading = true; e.reloadTimer = 0; }
+                }
+            }
+        } else if(e.state === 'alert') {
+            if(Math.random() < 0.03) {
+                let angle = Math.random() * Math.PI * 2;
+                e.patrolPoint = {x: Math.max(100, Math.min(CFG.MAP_W - 100, e.x + Math.cos(angle) * 150)), y: Math.max(100, Math.min(CFG.MAP_H - 100, e.y + Math.sin(angle) * 150))};
+            }
+            if(e.lastKnownPlayerX) {
+                let lkx = e.lastKnownPlayerX, lky = e.lastKnownPlayerY;
+                let pdx = lkx - e.x, pdy = lky - e.y;
+                let pd = Math.hypot(pdx, pdy);
+                if(pd > 20) {
+                    let ps = 2;
+                    let nx = e.x + (pdx / pd) * ps, ny = e.y + (pdy / pd) * ps;
+                    let cx2=false, cy2=false;
+                    mapEntities.walls.forEach(w => {
+                        if(checkCollisionRectCircle(w.x, w.y, w.w, w.h, nx, e.y, e.r)) cx2 = true;
+                        if(checkCollisionRectCircle(w.x, w.y, w.w, w.h, e.x, ny, e.r)) cy2 = true;
+                    });
+                    if(!cx2) e.x = nx;
+                    if(!cy2) e.y = ny;
+                } else {
+                    e.alertLevel -= 2;
+                }
+            }
+        } else if(e.state === 'idle') {
+            if(Math.random() < 0.02) {
+                e.patrolPoint = {x: Math.max(100, Math.min(CFG.MAP_W - 100, e.x + (Math.random() - 0.5) * 400)), y: Math.max(100, Math.min(CFG.MAP_H - 100, e.y + (Math.random() - 0.5) * 400))};
+            }
+            let pdx = e.patrolPoint.x - e.x, pdy = e.patrolPoint.y - e.y;
+            let pd = Math.hypot(pdx, pdy);
+            if(pd > 10) {
+                let ps = e.type === 'heavy' ? 1 : 1.5;
+                let nx = e.x + (pdx / pd) * ps, ny = e.y + (pdy / pd) * ps;
+                let cx2=false, cy2=false;
+                mapEntities.walls.forEach(w => {
+                    if(checkCollisionRectCircle(w.x, w.y, w.w, w.h, nx, e.y, e.r)) cx2 = true;
+                    if(checkCollisionRectCircle(w.x, w.y, w.w, w.h, e.x, ny, e.r)) cy2 = true;
+                });
+                if(!cx2) e.x = nx;
+                if(!cy2) e.y = ny;
+            }
+        }
+    });
+    
+    updateEnemyWarning(closestEnemyDist);
+
+    for(let i=mapEntities.particles.length-1; i>=0; i--) { let p = mapEntities.particles[i]; p.x += p.vx; p.y += p.vy; p.life -= 2; if(p.life <= 0) mapEntities.particles.splice(i, 1); }
+    for(let i=muzzleFlashes.length-1; i>=0; i--) { muzzleFlashes[i].life--; if(muzzleFlashes[i].life <= 0) muzzleFlashes.splice(i, 1); }
+    if(Math.random() < 0.1) updateHUD(); 
+}
+
+function updateEnemyWarning(closestDist) {
+    let warnEl = document.getElementById('enemyWarning');
+    if(closestDist < 300) {
+        warnEl.style.display = 'block';
+        let nearest = null, minD = Infinity;
+        mapEntities.enemies.forEach(e => { let d = dist(e.x, e.y, player.x, player.y); if(d < minD) { minD = d; nearest = e; }});
+        if(nearest) {
+            let angle = Math.atan2(nearest.y - player.y, nearest.x - player.x);
+            let distRatio = Math.max(0, 1 - minD / 300);
+            let offsetX = Math.cos(angle) * 150 * distRatio;
+            let offsetY = Math.sin(angle) * 150 * distRatio;
+            warnEl.innerHTML = `<div style="position:absolute;left:calc(50% + ${offsetX}px - 15px);top:calc(50% + ${offsetY}px - 15px);font-size:24px;color:#f44336;text-shadow:0 0 10px #f44336;">!</div>`;
+        }
+    } else {
+        warnEl.style.display = 'none';
+    }
+}
+
+function createParticles(x, y, color, count) { for(let i=0; i<count; i++) { mapEntities.particles.push({ x, y, vx: (Math.random()-0.5)*10, vy: (Math.random()-0.5)*10, life: randInt(20, 50), color }); } }
+
+function updateHUD() {
+    if(!gameState.inRaid) return;
+    let maxHp = player.maxHp || CFG.PLAYER_MAX_HP;
+    let maxStam = player.maxStam || CFG.PLAYER_MAX_STAM;
+    document.getElementById('hpFill').style.width = (player.hp / maxHp * 100) + '%'; document.getElementById('hpText').innerText = `HP ${Math.ceil(player.hp)}/${maxHp}`;
+    document.getElementById('stamFill').style.width = (player.stam / maxStam * 100) + '%'; document.getElementById('stamText').innerText = `体力 ${Math.ceil(player.stam)}/${maxStam}`;
+    let amMax = pData.eqArmor ? ITEM_DB[pData.eqArmor.id].maxDur : 1; document.getElementById('armFill').style.width = (player.armorDur / amMax * 100) + '%'; document.getElementById('armText').innerText = `护甲 ${Math.ceil(player.armorDur)}/${amMax===1?0:amMax}`;
+    let hmMax = pData.eqHelmet ? ITEM_DB[pData.eqHelmet.id].maxDur : 1; document.getElementById('helmFill').style.width = (player.helmDur / hmMax * 100) + '%'; document.getElementById('helmText').innerText = `头盔 ${Math.ceil(player.helmDur)}/${hmMax===1?0:hmMax}`;
+    let weight = calcWeight(pData.backpack) + calcWeight(pData.safeBox);
+    if(pData.eqWeapon) weight += ITEM_DB[pData.eqWeapon.id].weight; if(pData.eqArmor) weight += ITEM_DB[pData.eqArmor.id].weight; if(pData.eqHelmet) weight += ITEM_DB[pData.eqHelmet.id].weight;
+    document.getElementById('hudWeight').innerText = weight.toFixed(1) + '/80'; document.getElementById('hudSpeed').innerText = player.isRunning ? '加速' : (weight>20?'衰减':'正常');
+    let mins = Math.floor(gameState.timeRemain / 60), secs = Math.floor(gameState.timeRemain % 60).toString().padStart(2, '0');
+    document.getElementById('hudTime').innerText = `${mins}:${secs}`; document.getElementById('hudTime').style.color = mins < 5 ? '#f44336' : '#ffeb3b';
+    let weaponName = pData.eqWeapon ? `${ITEM_DB[pData.eqWeapon.id].icon} ${ITEM_DB[pData.eqWeapon.id].name}` : '未装备武器';
+    if(pData.eqWeapon && ITEM_DB[pData.eqWeapon.id].ammo) weaponName += ` [${ITEM_DB[pData.eqWeapon.id].ammo}]`;
+    document.getElementById('hudWeaponName').innerText = weaponName;
+    calcTotalAmmo(); document.getElementById('hudAmmo').innerText = pData.eqWeapon ? `${player.ammoLoaded} / ${player.ammoTotal}` : '0 / 0';
+    document.getElementById('hudWeaponDur').innerText = Math.floor(player.weaponDur);
+    
+    let throwable = pData.backpack.find(i => ITEM_DB[i.id].type === 'throwable');
+    document.getElementById('hudThrowable').innerText = throwable ? `${ITEM_DB[throwable.id].icon} ${ITEM_DB[throwable.id].name}` : '无';
+    let med = pData.backpack.find(i => ITEM_DB[i.id].type === 'med');
+    document.getElementById('hudMed').innerText = med ? `${ITEM_DB[med.id].icon} ${ITEM_DB[med.id].name}` : '无';
+    
+    document.getElementById('hudKills').innerText = gameState.stats.kills;
+    document.getElementById('hudLoots').innerText = gameState.stats.loots;
+    let carryValue = 0; [...pData.backpack, ...pData.safeBox].filter(Boolean).forEach(i => carryValue += getItemValue(i));
+    document.getElementById('hudCarryValue').innerText = carryValue;
+    
+    updateCompass();
+}
+
+function updateCompass() {
+    let deg = player.angle * 180 / Math.PI;
+    let needle = document.getElementById('compassNeedle');
+    needle.style.left = `calc(50% - ${deg}px)`;
+}
+
+function draw() {
+    const cvs = document.getElementById('gameCanvas'); const ctx = cvs.getContext('2d');
+    if(!gameState.inRaid) { ctx.clearRect(0,0,cvs.width,cvs.height); return; }
+    ctx.fillStyle = '#2b2b2b'; ctx.fillRect(0, 0, cvs.width, cvs.height);
+    ctx.save(); ctx.translate(-gameState.camera.x, -gameState.camera.y);
+    ctx.strokeStyle = '#333'; ctx.lineWidth = 1; let ox = gameState.camera.x % 100, oy = gameState.camera.y % 100;
+    ctx.beginPath();
+    for(let x=-ox; x<cvs.width; x+=100) { ctx.moveTo(gameState.camera.x+x, gameState.camera.y); ctx.lineTo(gameState.camera.x+x, gameState.camera.y+cvs.height); }
+    for(let y=-oy; y<cvs.height; y+=100) { ctx.moveTo(gameState.camera.x, gameState.camera.y+y); ctx.lineTo(gameState.camera.x+cvs.width, gameState.camera.y+y); }
+    ctx.stroke();
+    
+    mapEntities.smokeGrenades.forEach(s => {
+        ctx.fillStyle = `rgba(200,200,200,${0.3 * (s.life > 120 ? 1 : s.life / 120)})`;
+        ctx.beginPath(); ctx.arc(s.x, s.y, s.radius, 0, Math.PI*2); ctx.fill();
+    });
+
+    mapEntities.extracts.forEach(ex => { 
+        ctx.fillStyle = ex.type === 'safe' ? 'rgba(76, 175, 80, 0.15)' : 'rgba(244, 67, 54, 0.15)'; 
+        ctx.beginPath(); ctx.arc(ex.x, ex.y, ex.r, 0, Math.PI*2); ctx.fill(); 
+        ctx.strokeStyle = ex.type === 'safe' ? '#4caf50' : '#f44336'; ctx.lineWidth = 3; ctx.stroke();
+        ctx.fillStyle = ex.type === 'safe' ? '#4caf50' : '#f44336'; ctx.font = 'bold 12px Arial'; ctx.textAlign = 'center';
+        ctx.fillText(ex.name, ex.x, ex.y - ex.r - 10); ctx.textAlign = 'left';
+    });
+    
+    mapEntities.containers.forEach(c => { 
+        ctx.fillStyle = c.opened ? '#444' : (c.type==='safe'?'#ff9800':'#2196f3'); 
+        ctx.fillRect(c.x, c.y, c.w, c.h); 
+        ctx.strokeStyle = '#111'; ctx.strokeRect(c.x, c.y, c.w, c.h); 
+        if(!c.opened) { ctx.fillStyle = '#fff'; ctx.font = '8px Arial'; ctx.fillText(c.type === 'weapon_case' ? 'W' : (c.type === 'safe' ? 'S' : 'B'), c.x + 15, c.y + 25); }
+    });
+    mapEntities.corpses.forEach(c => { ctx.fillStyle = '#5d4037'; ctx.beginPath(); ctx.arc(c.x, c.y, 12, 0, Math.PI*2); ctx.fill(); ctx.strokeStyle = '#3e2723'; ctx.lineWidth = 2; ctx.stroke(); });
+    ctx.fillStyle = '#455a64'; mapEntities.walls.forEach(w => { ctx.fillRect(w.x, w.y, w.w, w.h); ctx.strokeStyle = '#37474f'; ctx.lineWidth = 2; ctx.strokeRect(w.x, w.y, w.w, w.h); });
+    
+    mapEntities.enemies.forEach(e => {
+        let isAlert = e.alertLevel > 50;
+        let angle = Math.atan2(player.y - e.y, player.x - e.x);
+        
+        ctx.save();
+        ctx.translate(e.x, e.y);
+        ctx.rotate(angle);
+        
+        ctx.fillStyle = e.type === 'heavy' ? '#4a148c' : (e.type === 'sniper' ? '#880e4f' : (isAlert ? '#bf360c' : '#b71c1c'));
+        ctx.beginPath();
+        ctx.arc(0, 0, e.r, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.strokeStyle = '#000';
+        ctx.lineWidth = 2;
+        ctx.stroke();
+        
+        ctx.fillStyle = '#d7ccc8';
+        ctx.beginPath();
+        ctx.arc(0, -2, 5, 0, Math.PI * 2);
+        ctx.fill();
+        
+        let wId = e.weaponId;
+        if(wId === 'w_pistol') {
+            ctx.fillStyle = '#5d4037';
+            ctx.fillRect(5, -4, 15, 8);
+            ctx.fillStyle = '#424242';
+            ctx.fillRect(18, -3, 6, 6);
+        } else if(wId === 'w_smg') {
+            ctx.fillStyle = '#37474f';
+            ctx.fillRect(0, -4, 22, 8);
+            ctx.fillStyle = '#263238';
+            ctx.fillRect(20, -5, 8, 10);
+            ctx.fillStyle = '#78909c';
+            ctx.fillRect(8, 2, 10, 4);
+        } else if(wId === 'w_shotgun') {
+            ctx.fillStyle = '#5d4037';
+            ctx.fillRect(0, -3, 25, 6);
+            ctx.fillStyle = '#424242';
+            ctx.fillRect(23, -4, 8, 8);
+            ctx.fillStyle = '#8d6e63';
+            ctx.fillRect(0, -5, 8, 10);
+        } else if(wId === 'w_ar' || wId === 'w_ak') {
+            ctx.fillStyle = '#5d4037';
+            ctx.fillRect(0, -3, 25, 6);
+            ctx.fillStyle = '#424242';
+            ctx.fillRect(22, -4, 10, 8);
+            ctx.fillStyle = '#78909c';
+            ctx.fillRect(12, -6, 8, 3);
+            ctx.fillRect(8, 1, 8, 4);
+        } else if(wId === 'w_lmg') {
+            ctx.fillStyle = '#37474f';
+            ctx.fillRect(-2, -5, 32, 10);
+            ctx.fillStyle = '#263238';
+            ctx.fillRect(27, -4, 10, 8);
+            ctx.fillStyle = '#78909c';
+            ctx.fillRect(10, -7, 12, 2);
+            ctx.fillRect(15, 3, 10, 5);
+            ctx.fillStyle = '#5d4037';
+            ctx.fillRect(-5, -3, 8, 6);
+        } else if(wId === 'w_sniper' || wId === 'w_dmr') {
+            ctx.fillStyle = '#5d4037';
+            ctx.fillRect(0, -2, 35, 4);
+            ctx.fillStyle = '#424242';
+            ctx.fillRect(32, -3, 10, 6);
+            ctx.fillStyle = '#78909c';
+            ctx.fillRect(15, -5, 15, 3);
+            ctx.fillStyle = '#37474f';
+            ctx.fillRect(8, -4, 6, 6);
+        } else {
+            ctx.fillStyle = '#5d4037';
+            ctx.fillRect(0, -3, 20, 4);
+            ctx.fillStyle = '#37474f';
+            ctx.fillRect(18, -3, 8, 6);
+        }
+        
+        ctx.restore();
+        
+        ctx.fillStyle = '#000'; ctx.fillRect(e.x-10, e.y-25, 20, 4); ctx.fillStyle = '#f00'; ctx.fillRect(e.x-10, e.y-25, 20*(e.hp/e.maxHp), 4);
+        
+        if(isAlert) {
+            ctx.fillStyle = '#ff9800'; ctx.font = 'bold 10px Arial'; ctx.textAlign = 'center';
+            ctx.fillText('!', e.x, e.y - 30); ctx.textAlign = 'left';
+        }
+        if (e.reloading) {
+            ctx.fillStyle = '#ffeb3b'; ctx.font = 'bold 10px Arial'; ctx.textAlign = 'center'; 
+            ctx.fillText("换弹", e.x, e.y - 32); ctx.textAlign = 'left';
+        }
+    });
+    
+    ctx.save();
+    ctx.translate(player.x, player.y);
+    ctx.rotate(player.angle);
+    
+    ctx.fillStyle = playerBodyColor || '#1565c0';
+    ctx.beginPath();
+    ctx.ellipse(0, 5, 13, 17, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = 'rgba(0,0,0,0.4)';
+    ctx.lineWidth = 2;
+    ctx.stroke();
+    
+    let grad = ctx.createLinearGradient(-10, 0, 10, 0);
+    grad.addColorStop(0, 'rgba(255,255,255,0.15)');
+    grad.addColorStop(0.5, 'rgba(255,255,255,0.25)');
+    grad.addColorStop(1, 'rgba(0,0,0,0.1)');
+    ctx.fillStyle = grad;
+    ctx.beginPath();
+    ctx.ellipse(0, 5, 13, 17, 0, 0, Math.PI * 2);
+    ctx.fill();
+    
+    ctx.fillStyle = playerSkinColor || '#ffcc80';
+    ctx.beginPath();
+    ctx.arc(0, -10, 9, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = 'rgba(0,0,0,0.25)';
+    ctx.lineWidth = 1;
+    ctx.stroke();
+    
+    ctx.fillStyle = 'rgba(0,0,0,0.6)';
+    ctx.beginPath();
+    ctx.ellipse(-3, -11, 2, 1.2, 0, 0, Math.PI * 2);
+    ctx.ellipse(3, -11, 2, 1.2, 0, 0, Math.PI * 2);
+    ctx.fill();
+    
+    ctx.strokeStyle = 'rgba(0,0,0,0.35)';
+    ctx.lineWidth = 0.8;
+    ctx.beginPath();
+    ctx.arc(0, -8, 3.5, 0.15 * Math.PI, 0.85 * Math.PI);
+    ctx.stroke();
+    
+    if(pData.eqHelmet) {
+        ctx.fillStyle = '#455a64';
+        ctx.beginPath();
+        ctx.arc(0, -12, 11, Math.PI, 0);
+        ctx.fill();
+        ctx.strokeStyle = 'rgba(0,0,0,0.35)';
+        ctx.lineWidth = 1.5;
+        ctx.stroke();
+        
+        ctx.fillStyle = 'rgba(255,255,255,0.12)';
+        ctx.beginPath();
+        ctx.arc(-4, -16, 3.5, 0, Math.PI * 2);
+        ctx.fill();
+    }
+    
+    if(pData.eqArmor) {
+        grad = ctx.createLinearGradient(-12, 8, 12, 32);
+        grad.addColorStop(0, '#4a4a4a');
+        grad.addColorStop(0.5, '#5a5a5a');
+        grad.addColorStop(1, '#3a3a3a');
+        ctx.fillStyle = grad;
+        ctx.beginPath();
+        ctx.moveTo(-12, -2);
+        ctx.lineTo(12, -2);
+        ctx.lineTo(14, 35);
+        ctx.lineTo(-14, 35);
+        ctx.closePath();
+        ctx.fill();
+        ctx.strokeStyle = '#222';
+        ctx.lineWidth = 1.5;
+        ctx.stroke();
+        
+        ctx.fillStyle = '#ff9800';
+        ctx.fillRect(-4, 3, 8, 2.5);
+        ctx.fillRect(-6, 9, 12, 1.5);
+        ctx.fillRect(-5, 14, 10, 1.5);
+        
+        ctx.fillStyle = '#666';
+        ctx.fillRect(-10, 6, 3, 6);
+        ctx.fillRect(7, 6, 3, 6);
+    }
+    
+    if(!pData.eqWeapon) {
+        ctx.fillStyle = '#bcaaa4';
+        ctx.fillRect(10, -2, 8, 3);
+        ctx.fillRect(16, -3, 5, 5);
+    } else {
+        let wId = pData.eqWeapon.id;
+        if(wId === 'w_pistol' || wId === 'w_glock' || wId === 'w_r1895') {
+            ctx.fillStyle = '#5d4037';
+            ctx.fillRect(5, -4, 15, 8);
+            ctx.fillStyle = '#424242';
+            ctx.fillRect(18, -3, 6, 6);
+            ctx.fillStyle = '#212121';
+            ctx.beginPath();
+            ctx.arc(22, 0, 3, 0, Math.PI * 2);
+            ctx.fill();
+        } else if(wId === 'w_smg' || wId === 'w_vector') {
+            ctx.fillStyle = '#37474f';
+            ctx.fillRect(0, -4, 22, 8);
+            ctx.fillStyle = '#263238';
+            ctx.fillRect(20, -5, 8, 10);
+            ctx.fillStyle = '#78909c';
+            ctx.fillRect(8, 2, 10, 4);
+            ctx.fillStyle = '#212121';
+            ctx.beginPath();
+            ctx.arc(26, 0, 3, 0, Math.PI * 2);
+            ctx.fill();
+        } else if(wId === 'w_shotgun') {
+            ctx.fillStyle = '#5d4037';
+            ctx.fillRect(0, -3, 25, 6);
+            ctx.fillStyle = '#424242';
+            ctx.fillRect(23, -4, 8, 8);
+            ctx.fillStyle = '#8d6e63';
+            ctx.fillRect(0, -5, 8, 10);
+            ctx.fillStyle = '#212121';
+            ctx.beginPath();
+            ctx.arc(29, 0, 3, 0, Math.PI * 2);
+            ctx.fill();
+        } else if(wId === 'w_ar' || wId === 'w_ak' || wId === 'w_fal' || wId === 'w_aug') {
+            ctx.fillStyle = '#5d4037';
+            ctx.fillRect(0, -3, 25, 6);
+            ctx.fillStyle = '#424242';
+            ctx.fillRect(22, -4, 10, 8);
+            ctx.fillStyle = '#78909c';
+            ctx.fillRect(12, -6, 8, 3);
+            ctx.fillRect(8, 1, 8, 4);
+            ctx.fillStyle = '#212121';
+            ctx.beginPath();
+            ctx.arc(30, 0, 3, 0, Math.PI * 2);
+            ctx.fill();
+        } else if(wId === 'w_lmg') {
+            ctx.fillStyle = '#37474f';
+            ctx.fillRect(-2, -5, 32, 10);
+            ctx.fillStyle = '#263238';
+            ctx.fillRect(27, -4, 10, 8);
+            ctx.fillStyle = '#78909c';
+            ctx.fillRect(10, -7, 12, 2);
+            ctx.fillRect(15, 3, 10, 5);
+            ctx.fillStyle = '#5d4037';
+            ctx.fillRect(-5, -3, 8, 6);
+            ctx.fillStyle = '#212121';
+            ctx.beginPath();
+            ctx.arc(35, 0, 3, 0, Math.PI * 2);
+            ctx.fill();
+        } else if(wId === 'w_sniper' || wId === 'w_dmr' || wId === 'w_vss') {
+            ctx.fillStyle = '#5d4037';
+            ctx.fillRect(0, -2, 35, 4);
+            ctx.fillStyle = '#424242';
+            ctx.fillRect(32, -3, 10, 6);
+            ctx.fillStyle = '#78909c';
+            ctx.fillRect(15, -5, 15, 3);
+            ctx.fillStyle = '#37474f';
+            ctx.fillRect(8, -4, 6, 6);
+            ctx.fillStyle = '#212121';
+            ctx.beginPath();
+            ctx.arc(40, 0, 3, 0, Math.PI * 2);
+            ctx.fill();
+        } else {
+            ctx.fillStyle = '#5d4037';
+            ctx.fillRect(0, -3, 25, 6);
+            ctx.fillStyle = '#424242';
+            ctx.fillRect(22, -4, 8, 8);
+            ctx.fillStyle = '#212121';
+            ctx.beginPath();
+            ctx.arc(28, 0, 3, 0, Math.PI * 2);
+            ctx.fill();
+        }
+    }
+    
+    ctx.restore();
+    
+    ctx.strokeStyle = '#03a9f4';
+    ctx.lineWidth = 2;
+    ctx.setLineDash([4, 4]);
+    ctx.beginPath();
+    ctx.moveTo(player.x + Math.cos(player.angle) * 30, player.y + Math.sin(player.angle) * 30);
+    ctx.lineTo(player.x + Math.cos(player.angle) * 50, player.y + Math.sin(player.angle) * 50);
+    ctx.stroke();
+    ctx.setLineDash([]);
+    
+    muzzleFlashes.forEach(mf => {
+        let alpha = mf.life / 5;
+        ctx.fillStyle = `rgba(255, 200, 50, ${alpha})`;
+        ctx.beginPath(); ctx.arc(mf.x, mf.y, 15, 0, Math.PI*2); ctx.fill();
+        ctx.fillStyle = `rgba(255, 255, 200, ${alpha})`;
+        ctx.beginPath(); ctx.arc(mf.x, mf.y, 8, 0, Math.PI*2); ctx.fill();
+        ctx.strokeStyle = `rgba(255, 100, 0, ${alpha})`;
+        ctx.lineWidth = 2;
+        ctx.beginPath(); ctx.arc(mf.x, mf.y, 18, 0, Math.PI*2); ctx.stroke();
+    });
+    
+    if(gameState.searching) {
+        ctx.fillStyle = 'rgba(0, 0, 0, 0.6)'; ctx.beginPath(); ctx.arc(player.x, player.y - 30, 15, 0, Math.PI*2); ctx.fill();
+        ctx.fillStyle = '#ffeb3b'; ctx.beginPath(); ctx.moveTo(player.x, player.y - 30); ctx.arc(player.x, player.y - 30, 15, -Math.PI/2, -Math.PI/2 + (gameState.searchTimer/CFG.SEARCH_TIME)*Math.PI*2); ctx.fill();
+        ctx.fillStyle = '#fff'; ctx.font = 'bold 12px Arial'; ctx.textAlign = 'center'; ctx.fillText("拆箱中...", player.x, player.y - 50); ctx.textAlign = 'left';
+    }
+
+    ctx.strokeStyle = 'rgba(255,255,255,0.3)'; ctx.lineWidth=1; ctx.setLineDash([5, 5]);
+    let aimX = gameState.mouseX + gameState.camera.x, aimY = gameState.mouseY + gameState.camera.y;
+    ctx.beginPath(); ctx.moveTo(player.x, player.y); ctx.lineTo(aimX, aimY); ctx.stroke();
+    ctx.setLineDash([]);
+    
+    mapEntities.bullets.forEach(b => {
+        if(b.trail && b.trail.length > 1) {
+            ctx.strokeStyle = b.isPlayer ? 'rgba(255,255,0,0.5)' : 'rgba(255,0,0,0.5)';
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            ctx.moveTo(b.trail[0].x, b.trail[0].y);
+            for(let i=1; i<b.trail.length; i++) ctx.lineTo(b.trail[i].x, b.trail[i].y);
+            ctx.stroke();
+        }
+        ctx.fillStyle = b.isPlayer ? '#ff0' : '#f00'; ctx.beginPath(); ctx.arc(b.x, b.y, 3, 0, Math.PI*2); ctx.fill();
+    });
+    mapEntities.particles.forEach(p => { ctx.fillStyle = p.color; ctx.globalAlpha = p.life / 50; ctx.beginPath(); ctx.arc(p.x, p.y, 2, 0, Math.PI*2); ctx.fill(); ctx.globalAlpha = 1; });
+    ctx.restore(); drawMinimap();
+}
+
+function drawMinimap() {
+    const mm = document.getElementById('minimap'); const mctx = mm.getContext('2d');
+    mctx.clearRect(0,0,mm.width, mm.height); let scale = mm.width / CFG.MAP_W;
+    mctx.fillStyle = '#333'; mctx.fillRect(0, 0, mm.width, mm.height);
+    
+    mctx.fillStyle = 'rgba(76, 175, 80, 0.3)';
+    mapEntities.extracts.filter(ex => ex.type === 'safe').forEach(ex => { mctx.beginPath(); mctx.arc(ex.x * scale, ex.y * scale, Math.max(4, ex.r * scale), 0, Math.PI*2); mctx.fill(); });
+    mctx.fillStyle = 'rgba(244, 67, 54, 0.3)';
+    mapEntities.extracts.filter(ex => ex.type === 'hot').forEach(ex => { mctx.beginPath(); mctx.arc(ex.x * scale, ex.y * scale, Math.max(4, ex.r * scale), 0, Math.PI*2); mctx.fill(); });
+    
+    mctx.fillStyle = '#666';
+    mapEntities.containers.forEach(c => { if(!c.opened) mctx.fillRect(c.x*scale, c.y*scale, 2, 2); });
+    
+    mapEntities.enemies.forEach(e => {
+        let d = dist(e.x, e.y, player.x, player.y);
+        let alpha = Math.max(0.3, 1 - d / 600);
+        mctx.fillStyle = `rgba(244, 67, 54, ${alpha})`; mctx.beginPath(); mctx.arc(e.x*scale, e.y*scale, 3, 0, Math.PI*2); mctx.fill();
+    });
+    
+    mctx.fillStyle = '#03a9f4'; mctx.beginPath(); mctx.arc(player.x*scale, player.y*scale, 4, 0, Math.PI*2); mctx.fill();
+    
+    mctx.strokeStyle = '#03a9f4'; mctx.lineWidth = 1;
+    let dirX = player.x + Math.cos(player.angle) * 30, dirY = player.y + Math.sin(player.angle) * 30;
+    mctx.beginPath(); mctx.moveTo(player.x*scale, player.y*scale); mctx.lineTo(dirX*scale, dirY*scale); mctx.stroke();
+}
+
+function gameLoop() { update(); draw(); requestAnimationFrame(gameLoop); }
+window.onload = init;
+
+</script>
+</body>
+</html>
