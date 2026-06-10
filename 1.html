@@ -1,0 +1,1010 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <title>2D 撤离行动 (Extraction 2D)</title>
+    <style>
+        body, html { margin: 0; padding: 0; width: 100%; height: 100%; background-color: #111; color: #eee; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; overflow: hidden; user-select: none; }
+        
+        #gameCanvas { display: block; width: 100%; height: 100%; z-index: 1; }
+        .ui-layer { position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; z-index: 10; display: none; }
+        .pointer-auto { pointer-events: auto; }
+        
+        #hudUI.active { display: block; }
+        #stashUI.active, #lootUI.active, #inventoryUI.active, #resultUI.active, #shopUI.active, #operatorSelectUI.active { display: flex; }
+        
+        button { background: #333; color: #fff; border: 1px solid #555; padding: 8px 16px; cursor: pointer; font-weight: bold; transition: 0.2s; border-radius: 4px;}
+        button:hover { background: #555; border-color: #888; }
+        .panel { background: rgba(20, 20, 20, 0.95); border: 2px solid #444; padding: 20px; border-radius: 8px; box-shadow: 0 0 20px rgba(0,0,0,0.8); }
+        
+        #stashUI, #shopUI { flex-direction: column; align-items: center; justify-content: center; background: #222; }
+        .stash-container { display: flex; gap: 15px; width: 95%; height: 85%; }
+        .stash-box { flex: 1; background: linear-gradient(180deg, #1e1e1e 0%, #151515 100%); border: 1px solid #3a3a3a; border-radius: 8px; padding: 12px; overflow-y: auto; display: flex; flex-direction: column; box-shadow: 0 4px 12px rgba(0,0,0,0.5); }
+        .item-list { display: flex; flex-wrap: wrap; gap: 8px; align-content: flex-start; min-height: 40px; }
+        
+        .item-slot { width: 72px; height: 85px; background: linear-gradient(180deg, #2d2d2d 0%, #222 100%); border: 1px solid #444; border-radius: 6px; display: flex; flex-direction: column; align-items: center; justify-content: center; font-size: 11px; cursor: pointer; position: relative; text-align: center; transition: all 0.15s ease; }
+        .item-slot:hover { border-color: #888; transform: translateY(-2px); box-shadow: 0 4px 8px rgba(0,0,0,0.4); }
+        .item-slot:active { transform: translateY(0); }
+        .item-tag { font-size: 10px; color: #ddd; background: rgba(0,0,0,0.6); padding: 1px 4px; border-radius: 2px; margin-bottom: 2px; }
+        
+        .tier-0 { border-bottom: 3px solid #ccc; } 
+        .tier-1 { border-bottom: 3px solid #4caf50; } 
+        .tier-2 { border-bottom: 3px solid #2196f3; } 
+        .tier-3 { border-bottom: 3px solid #9c27b0; } 
+        .tier-4 { border-bottom: 3px solid #ff9800; } 
+        .tier-5 { border-bottom: 3px solid #e53935; box-shadow: inset 0 0 15px rgba(229, 57, 53, 0.3); } 
+        
+        .reveal-overlay { position: absolute; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.85); display:flex; flex-direction:column; justify-content:center; align-items:center; z-index: 2; border-radius: 6px; }
+        .reveal-bar-bg { width: 80%; height: 6px; background: #222; margin-top: 8px; border-radius: 3px; overflow: hidden; border: 1px solid #444; }
+        .reveal-bar-fill { height: 100%; background: linear-gradient(90deg, #03a9f4, #00bcd4); width: 0%; }
+        
+        .filter-btn { padding: 6px 14px; background: #2a2a2a; border: 1px solid #444; border-radius: 20px; cursor: pointer; font-size: 12px; color: #aaa; transition: all 0.2s ease; }
+        .filter-btn:hover { background: #383838; color: #fff; }
+        .filter-btn.active { background: linear-gradient(180deg, #4caf50, #388e3c); color: #fff; border-color: #4caf50; box-shadow: 0 2px 6px rgba(76,175,80,0.3); }
+        
+        .clickable-equip { cursor: pointer; padding: 4px 10px; border-radius: 4px; background: #2a2a2a; border: 1px solid #444; transition: all 0.15s; }
+        .clickable-equip:hover { background: #3a3a3a; border-color: #666; }
+
+        #hudUI { pointer-events: none; }
+        .hud-bar-container { position: absolute; left: 20px; top: 20px; display: flex; flex-direction: column; gap: 8px; }
+        .bar-bg { width: 220px; height: 24px; background: linear-gradient(180deg, rgba(30,30,30,0.9), rgba(20,20,20,0.9)); border: 1px solid #444; border-radius: 4px; position: relative; overflow: hidden; box-shadow: 0 2px 8px rgba(0,0,0,0.5); }
+        .bar-fill { height: 100%; transition: width 0.2s ease-out; }
+        .bar-text { position: absolute; width: 100%; text-align: center; font-size: 12px; top: 0; line-height: 24px; font-weight: bold; text-shadow: 1px 1px 2px #000; }
+        
+        .hud-bottom-left { position: absolute; left: 20px; bottom: 20px; background: linear-gradient(180deg, rgba(30,30,30,0.95), rgba(15,15,15,0.95)); padding: 12px 16px; border: 1px solid #444; border-radius: 8px; min-width: 180px; box-shadow: 0 4px 12px rgba(0,0,0,0.5); }
+        .hud-top-right { position: absolute; right: 20px; top: 20px; border: 2px solid #333; background: rgba(0,0,0,0.9); width: 180px; height: 180px; border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.5); } 
+        #minimap { display: block; border-radius: 6px; }
+        
+        .crosshair { position: absolute; width: 24px; height: 24px; pointer-events: none; transform: translate(-50%, -50%); z-index: 100; }
+        .crosshair::before, .crosshair::after { content: ''; position: absolute; background: rgba(255, 255, 255, 0.9); }
+        .crosshair::before { top: 11px; left: 0; width: 24px; height: 2px; }
+        .crosshair::after { top: 0; left: 11px; width: 2px; height: 24px; }
+        .crosshair .dot { position: absolute; width: 4px; height: 4px; background: rgba(255,0,0,0.9); border-radius: 50%; top: 10px; left: 10px; }
+        
+        #damageOverlay { position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; z-index: 5; opacity: 0; transition: opacity 0.1s; background: radial-gradient(ellipse at center, transparent 40%, rgba(255,0,0,0.5) 100%); }
+        
+        #killFeed { position: absolute; top: 60px; right: 20px; width: 280px; pointer-events: none; z-index: 50; }
+        .kill-feed-item { background: linear-gradient(90deg, rgba(0,0,0,0.9), rgba(20,20,20,0.85)); padding: 10px 14px; margin-bottom: 5px; border-radius: 6px; font-size: 13px; display: flex; align-items: center; border-left: 4px solid #f44336; animation: fadeInLeft 0.3s ease-out; box-shadow: 0 2px 8px rgba(0,0,0,0.4); }
+        .kill-feed-item.player-kill { border-left-color: #4caf50; }
+        @keyframes fadeInLeft { from { opacity: 0; transform: translateX(50px); } to { opacity: 1; transform: translateX(0); } }
+        
+        #enemyWarning { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); pointer-events: none; z-index: 40; display: none; }
+        
+        .hud-compass { position: absolute; top: 220px; left: 20px; width: 180px; height: 28px; background: linear-gradient(180deg, rgba(30,30,30,0.95), rgba(15,15,15,0.95)); border: 1px solid #444; border-radius: 6px; overflow: hidden; box-shadow: 0 2px 8px rgba(0,0,0,0.5); }
+        .compassneedle { position: absolute; height: 100%; display: flex; align-items: center; transition: left 0.1s; }
+        .compassneedle span { color: #888; font-size: 10px; margin: 0 6px; white-space: nowrap; }
+        .compassneedle .player-marker { color: #03a9f4; font-weight: bold; font-size: 14px; }
+        
+        .hud-stats { position: absolute; right: 20px; bottom: 20px; background: linear-gradient(180deg, rgba(30,30,30,0.95), rgba(15,15,15,0.95)); padding: 10px 14px; border: 1px solid #444; border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.5); }
+        .hud-stats div { margin-bottom: 4px; font-size: 13px; }
+        .hud-stats div:last-child { margin-bottom: 0; }
+        
+        #extractBarContainer { position: absolute; bottom: 80px; left: 50%; transform: translateX(-50%); width: 300px; height: 30px; background: rgba(0,0,0,0.8); border: 2px solid #4caf50; border-radius: 6px; overflow: hidden; display: none; box-shadow: 0 0 20px rgba(76,175,80,0.3); }
+        #extractBar { height: 100%; background: linear-gradient(90deg, #4caf50, #81c784); transition: width 0.2s; }
+        #extractText { position: absolute; width: 100%; text-align: center; line-height: 30px; font-size: 13px; font-weight: bold; color: #fff; text-shadow: 1px 1px 2px #000; }
+        
+        .damage-number { position: absolute; pointer-events: none; font-size: 18px; font-weight: bold; color: #f44336; text-shadow: 1px 1px 2px #000, -1px -1px 2px #000; animation: damageFloat 0.8s ease-out forwards; z-index: 100; }
+        @keyframes damageFloat { 0% { opacity: 1; transform: translateY(0) scale(1.2); } 100% { opacity: 0; transform: translateY(-40px) scale(0.8); } }
+        
+        .heal-number { position: absolute; pointer-events: none; font-size: 18px; font-weight: bold; color: #4caf50; text-shadow: 1px 1px 2px #000, -1px -1px 2px #000; animation: damageFloat 0.8s ease-out forwards; z-index: 100; }
+        .hud-stats div { margin-bottom: 2px; }
+        
+        #lootUI { justify-content: center; align-items: center; background: rgba(0,0,0,0.5); }
+        .loot-panel { display: flex; gap: 20px; width: 800px; height: 500px; }
+        #inventoryUI { justify-content: center; align-items: center; background: rgba(0,0,0,0.7); }
+        .clickable-equip { cursor: pointer; text-decoration: underline; }
+        .clickable-equip:hover { opacity: 0.7; }
+        #resultUI { flex-direction: column; justify-content: center; align-items: center; background: rgba(0,0,0,0.9); }
+        
+        #extractBarContainer { position: absolute; bottom: 100px; left: 50%; transform: translateX(-50%); width: 400px; height: 30px; background: rgba(0,0,0,0.8); border: 2px solid #4caf50; display: none; }
+        #extractBar { height: 100%; background: #4caf50; width: 0%; }
+        #extractText { position: absolute; width: 100%; text-align: center; line-height: 30px; font-weight: bold; }
+        
+        #notification { position: absolute; top: 100px; left: 50%; transform: translateX(-50%); background: rgba(0,0,0,0.9); padding: 10px 20px; border-radius: 5px; color: #fff; font-weight: bold; display: none; transition: opacity 0.5s; z-index: 1000;}
+        
+        #operatorSelectUI { flex-direction: column; align-items: center; justify-content: center; background: rgba(0,0,0,0.95); }
+        .operator-container { display: flex; gap: 30px; width: 90%; height: 75%; }
+        .operator-list { display: flex; flex-wrap: wrap; gap: 15px; align-content: flex-start; justify-content: center; }
+        .operator-slot { width: 120px; height: 150px; background: #2a2a2a; border: 2px solid #555; border-radius: 8px; display: flex; flex-direction: column; align-items: center; justify-content: center; cursor: pointer; transition: 0.2s; position: relative; }
+        .operator-slot:hover { border-color: #fff; transform: scale(1.05); }
+        .operator-slot.selected { border-color: #4caf50; box-shadow: 0 0 15px rgba(76, 175, 80, 0.5); }
+        .operator-slot.locked { opacity: 0.5; cursor: not-allowed; }
+        .operator-preview { width: 80px; height: 100px; margin-bottom: 5px; }
+        .operator-name { font-size: 12px; font-weight: bold; color: #fff; text-align: center; }
+        .operator-role { font-size: 10px; color: #aaa; text-align: center; }
+        .operator-stats { font-size: 9px; color: #888; text-align: center; margin-top: 2px; }
+        .lock-icon { position: absolute; top: 5px; right: 5px; font-size: 14px; }
+    </style>
+</head>
+<body>
+
+    <canvas id="gameCanvas"></canvas>
+    <div class="crosshair" id="crosshair"><div class="dot"></div></div>
+    <div id="damageOverlay"></div>
+
+    <!-- UI: 战备仓库 -->
+    <div id="stashUI" class="ui-layer active pointer-auto">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:15px;padding:0 20px;">
+            <h1 style="margin:0;">战备仓库</h1>
+            <div style="display:flex;gap:15px;align-items:center;">
+                <div style="background:#1a1a1a;padding:8px 16px;border-radius:20px;border:1px solid #444;">
+                    <span style="color:#aaa;">总资产:</span> <span id="totalMoney" style="color:#ffeb3b;font-weight:bold;">0</span> <span style="color:#aaa;">银币</span>
+                </div>
+                <button onclick="showOperatorSelect()" style="background:linear-gradient(180deg,#4caf50,#388e3c);border:none;padding:10px 20px;border-radius:20px;color:#fff;font-size:14px;cursor:pointer;">选择干员并部署</button>
+                <button onclick="openShop()" style="background:linear-gradient(180deg,#ff9800,#f57c00);border:none;padding:10px 20px;border-radius:20px;color:#000;font-size:14px;cursor:pointer;">黑市商人</button>
+                <button onclick="saveGame()" style="background:linear-gradient(180deg,#2196f3,#1976d2);border:none;padding:10px 20px;border-radius:20px;color:#fff;font-size:14px;cursor:pointer;">保存进度</button>
+            </div>
+        </div>
+        <div class="stash-container">
+            <div class="stash-box" style="flex: 1.3;">
+                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
+                    <h3 style="margin:0;color:#ccc;">永久仓库</h3>
+                    <span style="font-size:11px;color:#888;">点击物品放入背包或装备</span>
+                </div>
+                <div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:12px;">
+                    <span onclick="filterStash('all')" class="filter-btn active" id="filter-all">全部</span>
+                    <span onclick="filterStash('weapon')" class="filter-btn" id="filter-weapon">武器</span>
+                    <span onclick="filterStash('armor')" class="filter-btn" id="filter-armor">护甲</span>
+                    <span onclick="filterStash('helmet')" class="filter-btn" id="filter-helmet">头盔</span>
+                    <span onclick="filterStash('ammo')" class="filter-btn" id="filter-ammo">弹药</span>
+                    <span onclick="filterStash('med')" class="filter-btn" id="filter-med">医疗</span>
+                    <span onclick="filterStash('throwable')" class="filter-btn" id="filter-throwable">投掷</span>
+                    <span onclick="filterStash('valuable')" class="filter-btn" id="filter-valuable">贵重</span>
+                    <span onclick="filterStash('junk')" class="filter-btn" id="filter-junk">杂物</span>
+                </div>
+                <div id="stashList" class="item-list"></div>
+            </div>
+            <div class="stash-box" style="flex: 0.7;">
+                <div style="display:flex;justify-content:space-between;margin-bottom:8px;">
+                    <h3 style="margin:0;font-size:14px;color:#ccc;">负重: <span id="prepWeight">0</span>/40 kg</h3>
+                </div>
+                <div style="background:#222;border-radius:6px;padding:10px;margin-bottom:10px;">
+                    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
+                        <span style="color:#ccc;font-size:13px;font-weight:bold;">安全箱</span>
+                        <span style="color:#888;font-size:11px;">0/4格</span>
+                    </div>
+                    <div id="safeBoxList" class="item-list" style="min-height:60px;"></div>
+                    <div style="color:#666;font-size:10px;margin-top:4px;">* 点击背包物品即可放入安全箱</div>
+                </div>
+                <div style="background:#222;border-radius:6px;padding:10px;margin-bottom:10px;">
+                    <div style="color:#ccc;font-size:13px;font-weight:bold;margin-bottom:8px;">当前装备</div>
+                    <div style="display:flex;align-items:center;margin-bottom:8px;">
+                        <span style="color:#ff9800;width:50px;font-size:13px;font-weight:bold;">武器</span>
+                        <span id="eqWeapon" class="clickable-equip" style="color:#fff;flex:1;font-size:13px;">无</span>
+                    </div>
+                    <div style="display:flex;align-items:center;margin-bottom:8px;">
+                        <span style="color:#7b1fa2;width:50px;font-size:13px;font-weight:bold;">护甲</span>
+                        <span id="eqArmor" class="clickable-equip" style="color:#fff;flex:1;font-size:13px;">无</span>
+                    </div>
+                    <div style="display:flex;align-items:center;margin-bottom:8px;">
+                        <span style="color:#fbc02d;width:50px;font-size:13px;font-weight:bold;">头盔</span>
+                        <span id="eqHelmet" class="clickable-equip" style="color:#fff;flex:1;font-size:13px;">无</span>
+                    </div>
+                </div>
+                <div style="background:#222;border-radius:6px;padding:10px;">
+                    <div style="color:#ccc;font-size:13px;font-weight:bold;margin-bottom:8px;">战术背包</div>
+                    <div id="backpackList" class="item-list" style="min-height:60px;"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- UI: 干员选择 -->
+    <div id="operatorSelectUI" class="ui-layer pointer-auto">
+        <h1 style="margin-top: 10px; margin-bottom: 5px;">选择干员</h1>
+        <div id="difficultySelect" style="margin-bottom: 15px; padding: 12px; background: rgba(0,0,0,0.4); border-radius: 8px;">
+            <div style="margin-bottom: 8px; font-size: 14px; color: #aaa;">选择战区难度:</div>
+            <div style="display: flex; gap: 15px;">
+                <div class="diff-btn" data-diff="normal" onclick="selectDifficulty('normal')" style="padding: 10px 20px; background: #2d2d2d; border: 2px solid #4caf50; border-radius: 6px; cursor: pointer; text-align: center;">
+                    <div style="color: #4caf50; font-size: 16px; font-weight: bold;">普通</div>
+                    <div style="color: #888; font-size: 11px;">敌人较弱</div>
+                </div>
+                <div class="diff-btn" data-diff="secret" onclick="selectDifficulty('secret')" style="padding: 10px 20px; background: #2d2d2d; border: 2px solid #555; border-radius: 6px; cursor: pointer; text-align: center;">
+                    <div style="color: #ff9800; font-size: 16px; font-weight: bold;">机密</div>
+                    <div style="color: #888; font-size: 11px;">中等难度</div>
+                </div>
+                <div class="diff-btn" data-diff="topsecret" onclick="selectDifficulty('topsecret')" style="padding: 10px 20px; background: #2d2d2d; border: 2px solid #555; border-radius: 6px; cursor: pointer; text-align: center;">
+                    <div style="color: #f44336; font-size: 16px; font-weight: bold;">绝密</div>
+                    <div style="color: #888; font-size: 11px;">高难度</div>
+                </div>
+            </div>
+        </div>
+        <div style="margin-bottom: 10px;">
+            <button onclick="confirmOperator()" style="background: #4caf50; font-size: 16px; padding: 10px 30px;">确认部署</button>
+            <button onclick="closeOperatorSelect()" style="margin-left: 20px; background: #555;">返回仓库</button>
+        </div>
+        <div class="operator-container">
+            <div class="operator-list" id="operatorList"></div>
+        </div>
+        <div id="selectedOperatorInfo" style="margin-top: 10px; padding: 10px; background: rgba(0,0,0,0.5); border-radius: 5px; min-height: 60px;">
+            <h3 id="opInfoName" style="margin: 0 0 5px 0;">选择一名干员</h3>
+            <p id="opInfoDesc" style="margin: 0; color: #aaa; font-size: 14px;">选择后将携带该干员的特殊装备进入战区</p>
+        </div>
+    </div>
+
+    <!-- UI: 黑市商店 -->
+    <div id="shopUI" class="ui-layer pointer-auto">
+        <div class="panel" style="width: 80%; height: 80%; display: flex; flex-direction: column;">
+            <h2 style="margin-top: 0;">黑市商人 (当前银币: <span id="shopMoney" style="color:gold;">0</span>) 
+                <button onclick="closeShop()" style="float:right">返回战备仓库</button>
+            </h2>
+            <div style="display:flex;flex-wrap:wrap;gap:5px;margin-bottom:10px;">
+                <span onclick="filterShop('all')" class="filter-btn active" id="shop-filter-all">全部</span>
+                <span onclick="filterShop('weapon')" class="filter-btn" id="shop-filter-weapon">武器</span>
+                <span onclick="filterShop('armor')" class="filter-btn" id="shop-filter-armor">护甲</span>
+                <span onclick="filterShop('helmet')" class="filter-btn" id="shop-filter-helmet">头盔</span>
+                <span onclick="filterShop('ammo')" class="filter-btn" id="shop-filter-ammo">弹药</span>
+                <span onclick="filterShop('med')" class="filter-btn" id="shop-filter-med">医疗</span>
+                <span onclick="filterShop('throwable')" class="filter-btn" id="shop-filter-throwable">投掷</span>
+            </div>
+            <div class="stash-container" style="width: 100%; height: 100%;">
+                <div class="stash-box">
+                    <h3>商人供货单 (点击购买)</h3>
+                    <div id="shopBuyList" class="item-list"></div>
+                </div>
+                <div class="stash-box">
+                    <h3>我的仓库 (点击出售) <span style="font-size:12px;color:#aaa;">*9折出售, 战损按比例折价, 仅限未装备物资</span></h3>
+                    <div id="shopSellList" class="item-list"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- UI: 局内 HUD -->
+    <div id="hudUI" class="ui-layer">
+        <div class="hud-bar-container">
+            <div class="bar-bg"><div id="hpFill" class="bar-fill" style="width: 100%; background: linear-gradient(90deg, #d32f2f, #f44336);"></div><div id="hpText" class="bar-text">HP 100/100</div></div>
+            <div class="bar-bg"><div id="stamFill" class="bar-fill" style="width: 100%; background: linear-gradient(90deg, #1976d2, #2196f3);"></div><div id="stamText" class="bar-text">体力 100/100</div></div>
+            <div class="bar-bg" style="width: 180px;"><div id="armFill" class="bar-fill" style="width: 0%; background: linear-gradient(90deg, #7b1fa2, #9c27b0);"></div><div id="armText" class="bar-text">护甲 0/0</div></div>
+            <div class="bar-bg" style="width: 180px;"><div id="helmFill" class="bar-fill" style="width: 0%; background: linear-gradient(90deg, #f9a825, #fbc02d);"></div><div id="helmText" class="bar-text">头盔 0/0</div></div>
+            <div style="text-shadow: 1px 1px 2px #000; font-size: 12px; color: #ccc;">负重: <span id="hudWeight" style="color:#ffeb3b">0/40</span> kg | <span id="hudSpeed" style="color:#4caf50">正常</span></div>
+            <div style="text-shadow: 1px 1px 2px #000; color: #ffeb3b; font-size: 18px; font-weight: bold;">⏱ <span id="hudTime">20:00</span></div>
+            <div id="hudExtractHint" style="text-shadow: 1px 1px 2px #000; color: #4caf50; font-size: 13px; display: none;">🚪 靠近撤离点按 F 撤离</div>
+        </div>
+        <div class="hud-bottom-left">
+            <div style="font-size: 16px; font-weight: bold; color: #ffeb3b; margin-bottom:8px;" id="hudWeaponName">未装备武器</div>
+            <div style="font-size: 12px; color: #aaa; margin-bottom:4px;">弹药: <span id="hudAmmo" style="color:#fff;">0 / 0</span></div>
+            <div style="font-size: 12px; color: #aaa; margin-bottom:8px;">耐久: <span id="hudWeaponDur" style="color:#fff;">0</span></div>
+            <div style="border-top: 1px solid #333; padding-top:8px; margin-top:4px;">
+                <div style="font-size: 12px; margin-bottom:4px;">💣 <span id="hudThrowable" style="color:#ccc;">无</span></div>
+                <div style="font-size: 12px;">医疗: <span id="hudMed" style="color:#ccc;">无</span></div>
+            </div>
+        </div>
+        <canvas id="minimap" class="hud-top-right" width="180" height="180"></canvas>
+        <div class="hud-compass">
+            <div class="compassneedle" id="compassNeedle">
+                <span>W</span><span>225</span><span>N</span><span>315</span><span class="player-marker">▲</span><span>E</span><span>45</span><span>S</span><span>135</span>
+            </div>
+        </div>
+        <div class="hud-stats">
+            <div>⚔️ 击杀: <span id="hudKills" style="color:#f44336">0</span></div>
+            <div>📦 搜刮: <span id="hudLoots" style="color:#4caf50">0</span></div>
+            <div>💰 价值: <span id="hudCarryValue" style="color:#ffeb3b">0</span></div>
+        </div>
+        <div id="extractBarContainer">
+            <div id="extractBar"></div>
+            <div id="extractText">正在撤离... 15s</div>
+        </div>
+        <div id="killFeed"></div>
+        <div id="enemyWarning"></div>
+    </div>
+
+    <!-- UI: 搜刮面板 -->
+    <div id="lootUI" class="ui-layer pointer-auto">
+        <div class="panel loot-panel">
+            <div class="stash-box">
+                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
+                    <h3 style="margin:0;">容器物资</h3>
+                    <div style="display:flex;gap:15px;align-items:center;">
+                        <span style="color:#4caf50;font-size:14px;">当前价值: <span id="lootContainerValue" style="font-weight:bold;">0</span></span>
+                        <button onclick="lootAll()" style="background:#4caf50;border:none;padding:6px 14px;border-radius:15px;color:#fff;cursor:pointer;">全部拾取已探明</button>
+                    </div>
+                </div>
+                <div id="lootContainerList" class="item-list"></div>
+            </div>
+            <div class="stash-box">
+                <h3>我的背包 (空间: <span id="lootBagWeight">0</span>/40) <span style="font-size:12px;font-weight:normal;color:#4caf50;">价值: <span id="lootBagValue">0</span></span> <button onclick="closeLoot()" style="float:right">关闭 [F/ESC]</button></h3>
+                <div id="lootMyBagList" class="item-list"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- UI: 背包面板 -->
+    <div id="inventoryUI" class="ui-layer pointer-auto">
+        <div class="panel stash-container" style="width: 60%; height: 60%;">
+            <div class="stash-box">
+                <h3>装备栏 (点击卸下) <button onclick="closeInventory()" style="float:right">关闭 [Tab]</button></h3>
+                <div>主武: <span id="invEqWeapon" class="clickable-equip" style="color:#ff9800">无</span></div>
+                <div>护甲: <span id="invEqArmor" class="clickable-equip" style="color:#7b1fa2">无</span></div>
+                <div>头盔: <span id="invEqHelmet" class="clickable-equip" style="color:#fbc02d">无</span></div>
+                <hr>
+                <h4>安全箱</h4>
+                <div id="invSafeBox" class="item-list"></div>
+            </div>
+            <div class="stash-box">
+                <h3>背包物资 <span style="font-size:14px;font-weight:normal;">(左键: 装备武器/护甲 或 丢弃其它)</span></h3>
+                <div id="invBackpack" class="item-list"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- UI: 结算面板 -->
+    <div id="resultUI" class="ui-layer pointer-auto panel" style="width: 50%; height: 60%; left: 25%; top: 20%;">
+        <h1 id="resultTitle" style="text-align:center">撤离成功</h1>
+        <div style="font-size: 18px; margin: 20px 0; line-height: 1.8;">
+            <p>状态: <span id="resStatus"></span></p>
+            <p>带出总价值: <span id="resValue" style="color: gold">0</span> 银币</p>
+            <p>击杀敌人: <span id="resKills">0</span></p>
+            <p>搜刮容器: <span id="resLoots">0</span></p>
+        </div>
+        <div style="text-align: center; margin-top: 30px;">
+            <button onclick="returnToStash()" style="font-size: 20px; padding: 15px 30px;">返回战备仓库</button>
+        </div>
+    </div>
+
+    <div id="notification">提示信息</div>
+
+<script>
+const OPERATORS = [
+    {
+        id: 'op_assaulter', name: '突击手', role: '进攻型', unlocked: true, cost: 0,
+        desc: '标准突击兵，平衡的属性，适合新手',
+        color: '#d32f2f', skinTone: '#e0b496', hasHelmet: false, hasArmor: false, hasBackpack: true,
+        stats: { hp: 100, stam: 100, speed: 100, armor: 0 }
+    },
+    {
+        id: 'op_tanker', name: '重装兵', role: '防御型', unlocked: true, cost: 0,
+        desc: '装备重型防弹衣，生命值高但移速较慢',
+        color: '#7b1fa2', skinTone: '#c68642', hasHelmet: true, hasArmor: true, hasBackpack: true,
+        armor: { id: 'ar_2', dur: 100 }, helmet: { id: 'hl_2', dur: 80 },
+        stats: { hp: 130, stam: 70, speed: 70, armor: 40 }
+    },
+    {
+        id: 'op_scout', name: '侦察兵', role: '速度型', unlocked: true, cost: 0,
+        desc: '轻装上阵，移速极快，适合搜刮和撤离',
+        color: '#388e3c', skinTone: '#ffdbac', hasHelmet: false, hasArmor: false, hasBackpack: false,
+        stats: { hp: 80, stam: 120, speed: 130, armor: 0 }
+    },
+    {
+        id: 'op_sniper', name: '狙击手', role: '远程型', unlocked: true, cost: 0,
+        desc: '配备狙击枪，适合远距离作战',
+        color: '#1976d2', skinTone: '#e0b496', hasHelmet: true, hasArmor: false, hasBackpack: true,
+        weapon: { id: 'w_dmr', dur: 200 }, helmet: { id: 'hl_1', dur: 30 },
+        stats: { hp: 90, stam: 90, speed: 90, armor: 20 }
+    },
+    {
+        id: 'op_medic', name: '医疗兵', role: '支援型', unlocked: true, cost: 0,
+        desc: '携带大量医疗物资，团队生存能力更强',
+        color: '#fbc02d', skinTone: '#c68642', hasHelmet: false, hasArmor: true, hasBackpack: true,
+        armor: { id: 'ar_1', dur: 50 },
+        extraItems: [{ id: 'm_kit', count: 3 }, { id: 'm_band', count: 5 }, { id: 'm_stam', count: 2 }],
+        stats: { hp: 100, stam: 110, speed: 85, armor: 20 }
+    },
+    {
+        id: 'op_breacher', name: '破门手', role: '突击型', unlocked: true, cost: 0,
+        desc: '携带霰弹枪和大量手雷，擅长近战',
+        color: '#ff5722', skinTone: '#e0b496', hasHelmet: true, hasArmor: true, hasBackpack: true,
+        weapon: { id: 'w_shotgun', dur: 100 }, armor: { id: 'ar_1', dur: 50 }, helmet: { id: 'hl_1', dur: 30 },
+        extraItems: [{ id: 't_grenade', count: 4 }],
+        stats: { hp: 110, stam: 80, speed: 80, armor: 30 }
+    },
+    {
+        id: 'op_heavy', name: '火力支援', role: '压制型', unlocked: true, cost: 0,
+        desc: '装备轻机枪，持续火力压制',
+        color: '#455a64', skinTone: '#c68642', hasHelmet: true, hasArmor: true, hasBackpack: true,
+        weapon: { id: 'w_lmg', dur: 400 }, armor: { id: 'ar_2', dur: 100 }, helmet: { id: 'hl_2', dur: 80 },
+        extraItems: [{ id: 'a_556', count: 100 }],
+        stats: { hp: 120, stam: 60, speed: 55, armor: 50 }
+    },
+    {
+        id: 'op_ghost', name: '幽灵', role: '隐匿型', unlocked: true, cost: 0,
+        desc: '轻装高速，不携带显眼装备，减少敌人发现概率',
+        color: '#212121', skinTone: '#ffdbac', hasHelmet: false, hasArmor: false, hasBackpack: false,
+        stats: { hp: 70, stam: 130, speed: 140, armor: 0 }
+    }
+];
+
+let selectedOperator = null;
+let selectedDifficulty = 'normal';
+
+const DIFFICULTY = {
+    normal: { name: '普通', color: '#4caf50', enemySpeedMult: 0.7, enemyFireRateMult: 1.4, enemyDmgMult: 0.7, enemyCountMult: 0.6, lootQualityMult: 0.8, desc: '适合新手，敌人较弱' },
+    secret: { name: '机密', color: '#ff9800', enemySpeedMult: 1.0, enemyFireRateMult: 1.0, enemyDmgMult: 1.0, enemyCountMult: 1.0, lootQualityMult: 1.2, desc: '中等难度，平衡挑战' },
+    topsecret: { name: '绝密', color: '#f44336', enemySpeedMult: 1.4, enemyFireRateMult: 0.7, enemyDmgMult: 1.5, enemyCountMult: 1.5, lootQualityMult: 1.8, desc: '高难度，敌人凶猛' }
+};
+
+const CFG = {
+    FPS: 60,
+    MAP_W: 3000, MAP_H: 3000,
+    RAID_TIME: 1200, 
+    PLAYER_MAX_HP: 100, PLAYER_MAX_STAM: 100,
+    BASE_SPEED: 4, RUN_MULT: 1.8,
+    EXTRACT_TIME: 15, SEARCH_TIME: 2.0,
+    ENEMY_COUNT: 25, CONTAINER_COUNT: 80
+};
+
+const TAG_MAP = { 'weapon': '武器', 'armor': '防具', 'helmet': '防具', 'ammo': '子弹', 'med': '消耗', 'throwable': '消耗', 'valuable': '收藏', 'junk': '杂物' };
+
+const ITEM_ICONS = { 'weapon': '?', 'armor': '⊞', 'helmet': '◯', 'ammo': '▪', 'med': '十', 'throwable': '⬤', 'valuable': '◆', 'junk': '▭' };
+
+const ITEM_DB = {
+    'w_pistol': { name: 'M1911手枪', type: 'weapon', ammo: '9mm', mag: 7, dmg: 35, fireRate: 400, auto: false, spread: 0.05, weight: 1, val: 300, dur: 100, tier: 0, icon: '⌐' },
+    'w_smg': { name: 'MP5冲锋枪', type: 'weapon', ammo: '9mm', mag: 30, dmg: 20, fireRate: 800, auto: true, spread: 0.1, weight: 2.5, val: 1200, dur: 200, tier: 1, icon: '⌐▄' },
+    'w_ar': { name: 'M4A1步枪', type: 'weapon', ammo: '5.56', mag: 30, dmg: 35, fireRate: 700, auto: true, spread: 0.04, weight: 3.5, val: 3500, dur: 250, tier: 2, icon: '▄──' },
+    'w_ak': { name: 'AKM突击步枪', type: 'weapon', ammo: '7.62', mag: 30, dmg: 42, fireRate: 600, auto: true, spread: 0.08, weight: 4, val: 3200, dur: 300, tier: 2, icon: '▄▄─' },
+    'w_shotgun': { name: 'S686霰弹枪', type: 'weapon', ammo: '12g', mag: 2, dmg: 18, pellets: 8, fireRate: 80, auto: false, spread: 0.25, weight: 3, val: 1500, dur: 100, tier: 1, icon: '▬▄' },
+    'w_sniper': { name: 'AWM狙击枪', type: 'weapon', ammo: '7.62', mag: 5, dmg: 140, fireRate: 40, auto: false, spread: 0.005, weight: 6, val: 8000, dur: 150, tier: 4, icon: '─◎─' },
+    'w_dmr': { name: 'M24狙击步', type: 'weapon', ammo: '7.62', mag: 10, dmg: 85, fireRate: 150, auto: false, spread: 0.02, weight: 5, val: 5500, dur: 200, tier: 3, icon: '─◈─' },
+    'w_lmg': { name: 'M249轻机枪', type: 'weapon', ammo: '5.56', mag: 100, dmg: 28, fireRate: 900, auto: true, spread: 0.15, weight: 9, val: 6000, dur: 400, tier: 3, icon: '█▄▄' },
+    'a_9mm': { name: '9mm子弹x30', type: 'ammo', count: 30, weight: 0.2, val: 50, tier: 0, icon: '▪' },
+    'a_556': { name: '5.56子弹x30', type: 'ammo', count: 30, weight: 0.3, val: 150, tier: 1, icon: '▫' },
+    'a_762': { name: '7.62子弹x30', type: 'ammo', count: 30, weight: 0.4, val: 200, tier: 1, icon: '◾' },
+    'a_12g': { name: '12号霰弹x10', type: 'ammo', count: 10, weight: 0.5, val: 100, tier: 0, icon: '▬' },
+    'ar_1': { name: '一级防弹衣', type: 'armor', maxDur: 50, reduce: 0.2, weight: 3, val: 500, tier: 0, icon: '⊞' },
+    'ar_2': { name: '二级重型甲', type: 'armor', maxDur: 100, reduce: 0.4, weight: 6, val: 2000, tier: 2, icon: '⬡' },
+    'ar_3': { name: '三级特种甲', type: 'armor', maxDur: 150, reduce: 0.6, weight: 8, val: 5000, tier: 3, icon: '⬢' },
+    'hl_1': { name: '摩托头盔', type: 'helmet', maxDur: 30, reduce: 0.3, weight: 1, val: 400, tier: 0, icon: '◯' },
+    'hl_2': { name: '军用战术盔', type: 'helmet', maxDur: 80, reduce: 0.5, weight: 2, val: 1800, tier: 2, icon: '◠' },
+    'hl_3': { name: '三级电焊盔', type: 'helmet', maxDur: 120, reduce: 0.8, weight: 3, val: 4500, tier: 3, icon: '◡' },
+    'm_band': { name: '无菌绷带', type: 'med', heal: 20, useTime: 2, weight: 0.1, val: 100, tier: 0, icon: '╱╲' },
+    'm_kit': { name: '速效急救包', type: 'med', heal: 50, useTime: 4, weight: 0.5, val: 500, tier: 1, icon: '十' },
+    'm_box': { name: '大型医疗箱', type: 'med', heal: 100, useTime: 6, weight: 1.5, val: 1500, tier: 2, icon: '╋' },
+    'm_stam': { name: '抗疲劳剂', type: 'med', stam: 100, useTime: 1, weight: 0.2, val: 600, tier: 1, icon: '◈' },
+    'm_repair': { name: '万能维修包', type: 'med', repair: 50, useTime: 5, weight: 2, val: 2000, tier: 2, icon: '⚙' },
+    't_grenade': { name: '破片手雷', type: 'throwable', dmg: 100, radius: 200, weight: 0.5, val: 800, tier: 2, icon: '⬤' },
+    't_smoke': { name: '烟雾弹', type: 'throwable', smoke: true, radius: 300, weight: 0.4, val: 400, tier: 1, icon: '◎' },
+    'v_gold': { name: '纯金条', type: 'valuable', weight: 2, val: 10000, tier: 3, icon: '▬▬' },
+    'v_doc': { name: '机密文件', type: 'valuable', weight: 0.1, val: 50000, tier: 4, icon: '▤' },
+    'v_chip': { name: '军用芯片', type: 'valuable', weight: 0.5, val: 8000, tier: 3, icon: '▫◈▫' },
+    'v_watch': { name: '古董手表', type: 'valuable', weight: 0.3, val: 3000, tier: 2, icon: '◐' },
+    'v_gem': { name: '红宝石', type: 'valuable', weight: 0.1, val: 15000, tier: 4, icon: '◆' },
+    'v_red_secret': { name: '顶级军工机密', type: 'valuable', weight: 0.5, val: 120000, tier: 5, icon: '◉' },
+    'v_diamond': { name: '完美血钻', type: 'valuable', weight: 0.1, val: 80000, tier: 5, icon: '◇' },
+    'j_tape': { name: '绝缘胶带', type: 'junk', weight: 0.2, val: 80, tier: 0, icon: '▭' },
+    'j_wrench': { name: '大扳手', type: 'junk', weight: 1, val: 150, tier: 0, icon: '⚡' },
+    'j_battery': { name: '干电池', type: 'junk', weight: 0.5, val: 200, tier: 1, icon: '▮▯' },
+    'j_parts': { name: '军工零件', type: 'junk', weight: 1.5, val: 1000, tier: 2, icon: '⚙⚙' },
+    'w_glock': { name: 'G17手枪', type: 'weapon', ammo: '9mm', mag: 10, dmg: 30, fireRate: 350, auto: false, spread: 0.04, weight: 0.8, val: 400, dur: 100, tier: 0, icon: '⌐' },
+    'w_vector': { name: 'Vector冲峰枪', type: 'weapon', ammo: '9mm', mag: 25, dmg: 22, fireRate: 1100, auto: true, spread: 0.12, weight: 2.3, val: 1500, dur: 180, tier: 1, icon: '⌐▄' },
+    'w_fal': { name: 'FAL自动步枪', type: 'weapon', ammo: '7.62', mag: 20, dmg: 45, fireRate: 550, auto: true, spread: 0.06, weight: 4.2, val: 4000, dur: 280, tier: 2, icon: '▄──' },
+    'w_aug': { name: 'AUG突击步枪', type: 'weapon', ammo: '5.56', mag: 30, dmg: 32, fireRate: 750, auto: true, spread: 0.035, weight: 3.3, val: 3800, dur: 240, tier: 2, icon: '▄──' },
+    'w_vss': { name: 'VSS射手步枪', type: 'weapon', ammo: '9mm', mag: 10, dmg: 38, fireRate: 200, auto: true, spread: 0.08, weight: 2.8, val: 4500, dur: 200, tier: 2, icon: '─◈─' },
+    'w_r1895': { name: '纳甘左轮', type: 'weapon', ammo: '7.62', mag: 7, dmg: 55, fireRate: 200, auto: false, spread: 0.06, weight: 1.2, val: 800, dur: 100, tier: 1, icon: '⌐' },
+    'ar_4': { name: '四级重甲', type: 'armor', maxDur: 200, reduce: 0.75, weight: 12, val: 12000, tier: 4, icon: '⬢' },
+    'hl_4': { name: '快速反应头盔', type: 'helmet', maxDur: 150, reduce: 0.65, weight: 4, val: 9000, tier: 4, icon: '◡' },
+    'm_salve': { name: '活血剂', type: 'med', heal: 75, useTime: 5, weight: 0.6, val: 800, tier: 1, icon: '╋' },
+    'm_adrenaline': { name: '肾上腺素', type: 'med', heal: 30, stam: 100, useTime: 3, weight: 0.3, val: 1200, tier: 2, icon: '◈' },
+    't_flash': { name: '闪光弹', type: 'throwable', flash: true, radius: 250, weight: 0.3, val: 500, tier: 1, icon: '◎' },
+    't_incendiary': { name: '燃烧弹', type: 'throwable', dmg: 60, radius: 180, weight: 0.6, val: 1000, tier: 2, icon: '🔥' },
+    'v_compass': { name: '军用指南针', type: 'valuable', weight: 0.2, val: 2500, tier: 2, icon: '◎' },
+    'v_money': { name: '美钞捆', type: 'valuable', weight: 0.3, val: 18000, tier: 3, icon: '▬▬' },
+    'v_ring': { name: '金戒指', type: 'valuable', weight: 0.1, val: 6000, tier: 3, icon: '◇' },
+    'v_necklace': { name: '珍珠项链', type: 'valuable', weight: 0.2, val: 8500, tier: 3, icon: '◎' },
+    'v_coin': { name: '古钱币', type: 'valuable', weight: 0.05, val: 45000, tier: 4, icon: '◉' },
+    'v_silver': { name: '银质奖杯', type: 'valuable', weight: 3, val: 25000, tier: 4, icon: '◈' },
+    'j_cable': { name: '数据线', type: 'junk', weight: 0.3, val: 120, tier: 0, icon: '▥' },
+    'j_chip': { name: '废弃芯片', type: 'junk', weight: 0.2, val: 350, tier: 1, icon: '▫' },
+    'j_toolkit': { name: '工具箱', type: 'junk', weight: 2, val: 600, tier: 1, icon: '⚙' }
+};
+
+const SHOP_ITEMS = ['w_pistol', 'w_glock', 'w_smg', 'w_vector', 'w_ak', 'w_fal', 'w_aug', 'w_lmg', 'a_9mm', 'a_556', 'a_762', 'a_12g', 'ar_1', 'ar_2', 'ar_4', 'hl_1', 'hl_2', 'hl_4', 'm_band', 'm_kit', 'm_salve', 'm_stam', 'm_adrenaline', 't_grenade', 't_smoke', 't_flash', 't_incendiary'];
+
+let audioCtx;
+const AUDIO = {
+    playShoot(type) {
+        if(!audioCtx) return;
+        const osc = audioCtx.createOscillator(); const gain = audioCtx.createGain();
+        osc.connect(gain); gain.connect(audioCtx.destination);
+        if(type === 'w_shotgun') { osc.type = 'square'; osc.frequency.setValueAtTime(100, audioCtx.currentTime); osc.frequency.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.3); gain.gain.setValueAtTime(0.35, audioCtx.currentTime); gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.3);
+        } else if(type === 'w_sniper' || type === 'w_dmr') { osc.type = 'sawtooth'; osc.frequency.setValueAtTime(200, audioCtx.currentTime); osc.frequency.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.5); gain.gain.setValueAtTime(0.3, audioCtx.currentTime); gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.5);
+        } else if(type === 'w_lmg') { osc.type = 'sawtooth'; osc.frequency.setValueAtTime(180, audioCtx.currentTime); osc.frequency.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.1); gain.gain.setValueAtTime(0.25, audioCtx.currentTime); gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.1);
+        } else if(type === 'w_ak') { osc.type = 'square'; osc.frequency.setValueAtTime(600, audioCtx.currentTime); osc.frequency.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.15); gain.gain.setValueAtTime(0.25, audioCtx.currentTime); gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.15);
+        } else if(type === 'w_ar') { osc.type = 'square'; osc.frequency.setValueAtTime(700, audioCtx.currentTime); osc.frequency.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.12); gain.gain.setValueAtTime(0.22, audioCtx.currentTime); gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.12);
+        } else if(type === 'w_smg') { osc.type = 'square'; osc.frequency.setValueAtTime(900, audioCtx.currentTime); osc.frequency.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.08); gain.gain.setValueAtTime(0.2, audioCtx.currentTime); gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.08);
+        } else { osc.type = 'square'; osc.frequency.setValueAtTime(800, audioCtx.currentTime); osc.frequency.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.1); gain.gain.setValueAtTime(0.25, audioCtx.currentTime); gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.1); }
+        osc.start(); osc.stop(audioCtx.currentTime + 0.5);
+    },
+    playHit() {
+        if(!audioCtx) return;
+        const osc = audioCtx.createOscillator(); const gain = audioCtx.createGain(); osc.connect(gain); gain.connect(audioCtx.destination);
+        osc.type = 'triangle'; osc.frequency.setValueAtTime(200, audioCtx.currentTime); osc.frequency.linearRampToValueAtTime(60, audioCtx.currentTime + 0.1);
+        gain.gain.setValueAtTime(0.4, audioCtx.currentTime); gain.gain.linearRampToValueAtTime(0.01, audioCtx.currentTime + 0.1); osc.start(); osc.stop(audioCtx.currentTime + 0.1);
+    },
+    playPlayerHit() {
+        if(!audioCtx) return;
+        const osc = audioCtx.createOscillator(); const gain = audioCtx.createGain(); osc.connect(gain); gain.connect(audioCtx.destination);
+        osc.type = 'sawtooth'; osc.frequency.setValueAtTime(100, audioCtx.currentTime); osc.frequency.linearRampToValueAtTime(50, audioCtx.currentTime + 0.15);
+        gain.gain.setValueAtTime(0.3, audioCtx.currentTime); gain.gain.linearRampToValueAtTime(0.01, audioCtx.currentTime + 0.15); osc.start(); osc.stop(audioCtx.currentTime + 0.15);
+    },
+    playLoot() {
+        if(!audioCtx) return;
+        const osc = audioCtx.createOscillator(); const gain = audioCtx.createGain(); osc.connect(gain); gain.connect(audioCtx.destination);
+        osc.type = 'sine'; osc.frequency.setValueAtTime(1000 + Math.random() * 400, audioCtx.currentTime); osc.frequency.setValueAtTime(1500 + Math.random() * 400, audioCtx.currentTime + 0.05);
+        gain.gain.setValueAtTime(0.12, audioCtx.currentTime); gain.gain.linearRampToValueAtTime(0.01, audioCtx.currentTime + 0.1); osc.start(); osc.stop(audioCtx.currentTime + 0.1);
+    },
+    playExplosion() {
+        if(!audioCtx) return;
+        const bufferSize = audioCtx.sampleRate * 0.6; const buffer = audioCtx.createBuffer(1, bufferSize, audioCtx.sampleRate);
+        const data = buffer.getChannelData(0); for (let i = 0; i < bufferSize; i++) data[i] = Math.random() * 2 - 1;
+        const noise = audioCtx.createBufferSource(); noise.buffer = buffer;
+        const filter = audioCtx.createBiquadFilter(); filter.type = 'lowpass'; filter.frequency.value = 800;
+        const gain = audioCtx.createGain(); gain.gain.setValueAtTime(0.8, audioCtx.currentTime); gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.6);
+        noise.connect(filter); filter.connect(gain); gain.connect(audioCtx.destination); noise.start();
+    },
+    playDeath() {
+        if(!audioCtx) return;
+        const osc = audioCtx.createOscillator(); const gain = audioCtx.createGain(); osc.connect(gain); gain.connect(audioCtx.destination);
+        osc.type = 'sawtooth'; osc.frequency.setValueAtTime(250, audioCtx.currentTime); osc.frequency.exponentialRampToValueAtTime(30, audioCtx.currentTime + 1);
+        gain.gain.setValueAtTime(0.4, audioCtx.currentTime); gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 1); osc.start(); osc.stop(audioCtx.currentTime + 1);
+    },
+    playReload() {
+        if(!audioCtx) return;
+        const bufferSize = audioCtx.sampleRate * 0.4; const buffer = audioCtx.createBuffer(1, bufferSize, audioCtx.sampleRate);
+        const data = buffer.getChannelData(0); for (let i = 0; i < bufferSize; i++) data[i] = (Math.random() * 2 - 1) * 0.3;
+        const noise = audioCtx.createBufferSource(); noise.buffer = buffer;
+        const filter = audioCtx.createBiquadFilter(); filter.type = 'bandpass'; filter.frequency.value = 2000; filter.Q.value = 2;
+        const gain = audioCtx.createGain(); gain.gain.setValueAtTime(0.15, audioCtx.currentTime); gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.4);
+        noise.connect(filter); filter.connect(gain); gain.connect(audioCtx.destination); noise.start();
+    },
+    playStep() {
+        if(!audioCtx) return;
+        const osc = audioCtx.createOscillator(); const gain = audioCtx.createGain(); osc.connect(gain); gain.connect(audioCtx.destination);
+        osc.type = 'triangle'; osc.frequency.setValueAtTime(80 + Math.random() * 40, audioCtx.currentTime);
+        gain.gain.setValueAtTime(0.06, audioCtx.currentTime); gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.08); osc.start(); osc.stop(audioCtx.currentTime + 0.08);
+    },
+    playEnemyAlert() {
+        if(!audioCtx) return;
+        const osc = audioCtx.createOscillator(); const gain = audioCtx.createGain(); osc.connect(gain); gain.connect(audioCtx.destination);
+        osc.type = 'square'; osc.frequency.setValueAtTime(400, audioCtx.currentTime); osc.frequency.setValueAtTime(600, audioCtx.currentTime + 0.1); osc.frequency.setValueAtTime(400, audioCtx.currentTime + 0.2);
+        gain.gain.setValueAtTime(0.15, audioCtx.currentTime); gain.gain.linearRampToValueAtTime(0.01, audioCtx.currentTime + 0.25); osc.start(); osc.stop(audioCtx.currentTime + 0.25);
+    },
+    playHeal() {
+        if(!audioCtx) return;
+        const osc = audioCtx.createOscillator(); const gain = audioCtx.createGain(); osc.connect(gain); gain.connect(audioCtx.destination);
+        osc.type = 'sine'; osc.frequency.setValueAtTime(600, audioCtx.currentTime); osc.frequency.linearRampToValueAtTime(1200, audioCtx.currentTime + 0.2);
+        gain.gain.setValueAtTime(0.15, audioCtx.currentTime); gain.gain.linearRampToValueAtTime(0.01, audioCtx.currentTime + 0.2); osc.start(); osc.stop(audioCtx.currentTime + 0.2);
+    }
+};
+
+let pData = {
+    money: 8000, 
+    stash: [ {id: 'w_pistol', dur: 100}, {id: 'a_9mm', count: 30}, {id: 'm_band', count: 1}, {id: 'w_smg', dur: 200}, {id: 'ar_1', dur: 50}, {id: 't_grenade', count: 2} ],
+    safeBox: [], backpack: [], eqWeapon: null, eqArmor: null, eqHelmet: null
+};
+
+let gameState = {
+    inRaid: false, paused: false, timeRemain: CFG.RAID_TIME, camera: { x: 0, y: 0 }, stats: { kills: 0, loots: 0, startValue: 0 },
+    extracting: false, extractTimer: 0, searching: false, searchTimer: 0, searchTarget: null, searchStartX: 0, searchStartY: 0,
+    mouseX: 0, mouseY: 0, keys: {}, isShooting: false, lastDamageTime: 0, screenShakeTime: 0
+};
+
+let mapEntities = { walls: [], containers: [], enemies: [], bullets: [], particles: [], extracts: [], corpses: [], smokeGrenades: [] };
+
+let player = {
+    x: 0, y: 0, radius: 15, hp: CFG.PLAYER_MAX_HP, stam: CFG.PLAYER_MAX_STAM,
+    weaponDur: 0, armorDur: 0, helmDur: 0, ammoLoaded: 0, ammoTotal: 0, lastFire: 0, isRunning: false, angle: 0
+};
+
+let killFeed = [];
+let muzzleFlashes = [];
+
+function uuid() { return Math.random().toString(36).substr(2, 9); }
+function dist(x1, y1, x2, y2) { return Math.hypot(x1 - x2, y1 - y2); }
+function randInt(min, max) { return Math.floor(Math.random() * (max - min + 1)) + min; }
+function getItemValue(itemObj) { return ITEM_DB[itemObj.id].val * (itemObj.count || 1); }
+function calcWeight(arr) { return arr.reduce((sum, item) => sum + (ITEM_DB[item.id].weight * (item.count || 1)), 0); }
+function showMsg(msg) {
+    const d = document.getElementById('notification'); d.innerText = msg; d.style.display = 'block'; d.style.opacity = 1;
+    setTimeout(() => d.style.opacity = 0, 2000); setTimeout(() => d.style.display = 'none', 2500);
+}
+
+// ---- 新增: 存取档系统 ----
+function saveGame() {
+    localStorage.setItem('extraction_save_v1', JSON.stringify(pData));
+    showMsg("存档成功！");
+}
+function loadGame() {
+    const saved = localStorage.getItem('extraction_save_v1');
+    if(saved) {
+        try {
+            Object.assign(pData, JSON.parse(saved));
+            console.log("存档加载成功");
+        } catch(e) { console.error("读取存档失败", e); }
+    }
+}
+// ------------------------
+
+function init() {
+    loadGame(); // 页面加载时自动读取存档
+    
+    window.addEventListener('keydown', e => { gameState.keys[e.key.toLowerCase()] = true; handleKeyPress(e.key.toLowerCase()); });
+    window.addEventListener('keyup', e => gameState.keys[e.key.toLowerCase()] = false);
+    window.addEventListener('mouseup', e => { if(e.button === 0) gameState.isShooting = false; });
+    
+    const cvs = document.getElementById('gameCanvas'); cvs.width = window.innerWidth; cvs.height = window.innerHeight;
+    cvs.addEventListener('mousemove', e => { gameState.mouseX = e.clientX; gameState.mouseY = e.clientY; const ch = document.getElementById('crosshair'); ch.style.left = e.clientX + 'px'; ch.style.top = e.clientY + 'px'; });
+    cvs.addEventListener('mousedown', e => { if(e.button === 0) { gameState.isShooting = true; if(gameState.inRaid && !gameState.paused) playerFire(false); } });
+    window.addEventListener('resize', () => { cvs.width = window.innerWidth; cvs.height = window.innerHeight; });
+    
+    renderStashUI(); requestAnimationFrame(gameLoop);
+}
+
+function openShop() {
+    if(!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    if(audioCtx.state === 'suspended') audioCtx.resume();
+    document.getElementById('stashUI').classList.remove('active'); document.getElementById('shopUI').classList.add('active'); renderShopUI();
+}
+function closeShop() { document.getElementById('shopUI').classList.remove('active'); document.getElementById('stashUI').classList.add('active'); renderStashUI(); }
+
+let shopFilter = 'all';
+
+function filterShop(type) {
+    shopFilter = type;
+    document.querySelectorAll('.filter-btn').forEach(btn => {
+        if(btn.id.startsWith('shop-filter')) btn.classList.remove('active');
+    });
+    document.getElementById('shop-filter-' + type).classList.add('active');
+    renderShopUI();
+}
+
+function renderShopUI() {
+    document.getElementById('shopMoney').innerText = pData.money;
+    const buyEl = document.getElementById('shopBuyList'); buyEl.innerHTML = '';
+    const filteredShop = shopFilter === 'all' ? SHOP_ITEMS : SHOP_ITEMS.filter(id => ITEM_DB[id].type === shopFilter);
+    filteredShop.forEach(id => {
+        const dbInfo = ITEM_DB[id]; const div = document.createElement('div'); div.className = `item-slot tier-${dbInfo.tier}`;
+        let ammoInfo = '';
+        if(dbInfo.type === 'weapon' && dbInfo.ammo) ammoInfo = `<div style="font-size:9px;color:#ff9800;">[${dbInfo.ammo}]</div>`;
+        div.innerHTML = `<div style="font-size:14px;font-weight:bold;color:#ffeb3b;letter-spacing:-1px;">${dbInfo.icon || ITEM_ICONS[dbInfo.type]}</div><div style="font-weight:bold;font-size:9px;color:#fff;">${dbInfo.name.substring(0,4)}</div><div style="color:#ffeb3b; font-weight:bold;font-size:9px;">买 ${dbInfo.val}</div>${ammoInfo}`;
+        div.title = `${dbInfo.name} | 价格: ${dbInfo.val} 银币`;
+        div.onclick = () => {
+            if(pData.money >= dbInfo.val) {
+                pData.money -= dbInfo.val; let newItem = {id: id};
+                if(dbInfo.type === 'weapon') newItem.dur = dbInfo.dur; if(dbInfo.type === 'armor' || dbInfo.type === 'helmet') newItem.dur = dbInfo.maxDur;
+                if(dbInfo.type === 'ammo') newItem.count = dbInfo.count; else if(dbInfo.type === 'med' || dbInfo.type === 'throwable') newItem.count = 1;
+                pData.stash.push(newItem); AUDIO.playLoot(); renderShopUI(); showMsg(`已购入: ${dbInfo.name}`);
+            } else showMsg("银币不足！");
+        }; buyEl.appendChild(div);
+    });
+
+    const sellEl = document.getElementById('shopSellList'); sellEl.innerHTML = '';
+    const filteredSell = shopFilter === 'all' ? pData.stash : pData.stash.filter(item => ITEM_DB[item.id].type === shopFilter);
+    filteredSell.forEach((item, idx) => {
+        const dbInfo = ITEM_DB[item.id]; let baseVal = dbInfo.val * (item.count || 1);
+        let durMult = 1; if(item.dur !== undefined) { let maxD = dbInfo.maxDur || dbInfo.dur; if(maxD) durMult = Math.max(0.1, item.dur / maxD); }
+        let sellVal = Math.floor(baseVal * durMult * 0.9);
+        const div = document.createElement('div'); div.className = `item-slot tier-${dbInfo.tier}`;
+        div.innerHTML = `<div style="font-size:14px;font-weight:bold;color:#ffeb3b;letter-spacing:-1px;">${dbInfo.icon || ITEM_ICONS[dbInfo.type]}</div><div style="font-weight:bold;font-size:9px;color:#fff;">${dbInfo.name.substring(0,4)}</div><div style="color:#4caf50; font-weight:bold;font-size:9px;">卖 ${sellVal}</div>`;
+        div.title = `${dbInfo.name} | 回收价: ${sellVal} 银币`;
+        div.onclick = () => { 
+            const origIdx = pData.stash.findIndex(i => i.id === item.id && i.dur === item.dur && i.count === item.count);
+            pData.money += sellVal; pData.stash.splice(origIdx, 1); AUDIO.playLoot(); renderShopUI(); showMsg(`出售成功，获得 ${sellVal} 银币`);
+        };
+        sellEl.appendChild(div);
+    });
+}
+
+let stashFilter = 'all';
+
+function filterStash(type) {
+    stashFilter = type;
+    document.querySelectorAll('.filter-btn').forEach(btn => btn.classList.remove('active'));
+    document.getElementById('filter-' + type).classList.add('active');
+    renderStashUI();
+}
+
+function renderStashUI() {
+    document.getElementById('totalMoney').innerText = pData.money;
+    let wSafe = calcWeight(pData.safeBox), wBag = calcWeight(pData.backpack);
+    let wEq = (pData.eqWeapon ? ITEM_DB[pData.eqWeapon.id].weight : 0) + (pData.eqArmor ? ITEM_DB[pData.eqArmor.id].weight : 0) + (pData.eqHelmet ? ITEM_DB[pData.eqHelmet.id].weight : 0);
+    document.getElementById('prepWeight').innerText = (wSafe + wBag + wEq).toFixed(1);
+    
+    document.getElementById('eqWeapon').innerHTML = pData.eqWeapon ? `<span style="color:#ffeb3b;font-size:14px;">${ITEM_DB[pData.eqWeapon.id].icon}</span> <span style="color:#fff;font-size:13px;">${ITEM_DB[pData.eqWeapon.id].name}</span> <span style="color:#888;font-size:11px;">耐${pData.eqWeapon.dur}</span>` : '<span style="color:#555;">无</span>';
+    document.getElementById('eqWeapon').onclick = () => { if(pData.eqWeapon) { pData.stash.push(pData.eqWeapon); pData.eqWeapon = null; renderStashUI(); }};
+    document.getElementById('eqArmor').innerHTML = pData.eqArmor ? `<span style="color:#ffeb3b;font-size:14px;">${ITEM_DB[pData.eqArmor.id].icon}</span> <span style="color:#fff;font-size:13px;">${ITEM_DB[pData.eqArmor.id].name}</span> <span style="color:#888;font-size:11px;">耐${pData.eqArmor.dur}</span>` : '<span style="color:#555;">无</span>';
+    document.getElementById('eqArmor').onclick = () => { if(pData.eqArmor) { pData.stash.push(pData.eqArmor); pData.eqArmor = null; renderStashUI(); }};
+    document.getElementById('eqHelmet').innerHTML = pData.eqHelmet ? `<span style="color:#ffeb3b;font-size:14px;">${ITEM_DB[pData.eqHelmet.id].icon}</span> <span style="color:#fff;font-size:13px;">${ITEM_DB[pData.eqHelmet.id].name}</span> <span style="color:#888;font-size:11px;">耐${pData.eqHelmet.dur}</span>` : '<span style="color:#555;">无</span>';
+    document.getElementById('eqHelmet').onclick = () => { if(pData.eqHelmet) { pData.stash.push(pData.eqHelmet); pData.eqHelmet = null; renderStashUI(); }};
+
+    const filteredStash = stashFilter === 'all' ? pData.stash : pData.stash.filter(item => ITEM_DB[item.id].type === stashFilter);
+    renderItemList(filteredStash, 'stashList', (item, idx) => {
+        const origIdx = pData.stash.findIndex(i => i.id === item.id && i.dur === item.dur && i.count === item.count);
+        const t = ITEM_DB[item.id].type;
+        if(t === 'weapon' && !pData.eqWeapon) { pData.eqWeapon = item; pData.stash.splice(origIdx,1); }
+        else if(t === 'armor' && !pData.eqArmor) { pData.eqArmor = item; pData.stash.splice(origIdx,1); }
+        else if(t === 'helmet' && !pData.eqHelmet) { pData.eqHelmet = item; pData.stash.splice(origIdx,1); }
+        else { pData.backpack.push(item); pData.stash.splice(origIdx,1); }
+        renderStashUI();
+    });
+    renderItemList(pData.safeBox, 'safeBoxList', (item, idx) => { pData.stash.push(item); pData.safeBox.splice(idx,1); renderStashUI(); });
+    renderItemList(pData.backpack, 'backpackList', (item, idx) => {
+        if(pData.safeBox.length < 4) { pData.safeBox.push(item); pData.backpack.splice(idx,1); } else { pData.stash.push(item); pData.backpack.splice(idx,1); }
+        renderStashUI();
+    });
+}
+
+function renderItemList(arr, containerId, onClickFunc) {
+    const el = document.getElementById(containerId); el.innerHTML = '';
+    if(!arr || arr.length === 0) return;
+    arr.forEach((item, idx) => {
+        const dbInfo = ITEM_DB[item.id];
+        if(!dbInfo) { console.log('Missing dbInfo:', item.id); return; }
+        const div = document.createElement('div'); div.className = `item-slot tier-${dbInfo.tier}`;
+        let ammoInfo = '';
+        if(dbInfo.type === 'weapon' && dbInfo.ammo) ammoInfo = `<div style="font-size:9px;color:#ff9800;">[${dbInfo.ammo}]</div>`;
+        let infoLine = item.count ? `x${item.count}` : `耐${item.dur||1}`;
+        const icon = dbInfo.icon || ITEM_ICONS[dbInfo.type] || '?';
+        div.innerHTML = `<div style="font-size:14px;font-weight:bold;color:#ffeb3b;letter-spacing:-1px;">${icon}</div><div style="font-weight:bold;font-size:9px;color:#fff;word-break:break-all;">${dbInfo.name.substring(0,4)}</div><div style="color:#aaa;font-size:9px;">${infoLine}</div>${ammoInfo}`;
+        div.onclick = () => onClickFunc(item, idx); 
+        let tooltip = `${dbInfo.name}`;
+        if(dbInfo.type === 'weapon' && dbInfo.ammo) tooltip += ` | 口径: ${dbInfo.ammo}`;
+        if(dbInfo.type === 'ammo') tooltip += ` | 适配: ${dbInfo.ammo}`;
+        tooltip += ` | 价值: ${dbInfo.val} | 重量: ${dbInfo.weight}kg`;
+        div.title = tooltip; 
+        el.appendChild(div);
+    });
+}
+
+function showOperatorSelect() {
+    selectedOperator = null;
+    if(!selectedDifficulty) selectDifficulty('normal');
+    document.getElementById('stashUI').classList.remove('active');
+    document.getElementById('operatorSelectUI').classList.add('active');
+    renderOperatorList();
+}
+
+function closeOperatorSelect() {
+    document.getElementById('operatorSelectUI').classList.remove('active');
+    document.getElementById('stashUI').classList.add('active');
+}
+
+function selectDifficulty(diff) {
+    selectedDifficulty = diff;
+    document.querySelectorAll('.diff-btn').forEach(btn => {
+        let isSelected = btn.dataset.diff === diff;
+        btn.style.borderColor = isSelected ? DIFFICULTY[diff].color : '#555';
+        btn.style.background = isSelected ? 'rgba(255,255,255,0.1)' : '#2d2d2d';
+    });
+}
+
+function renderOperatorList() {
+    const list = document.getElementById('operatorList');
+    list.innerHTML = '';
+    OPERATORS.forEach(op => {
+        const div = document.createElement('div');
+        div.className = `operator-slot${op.unlocked ? '' : ' locked'}${selectedOperator && selectedOperator.id === op.id ? ' selected' : ''}`;
+        
+        let canvas = document.createElement('canvas');
+        canvas.width = 80;
+        canvas.height = 100;
+        canvas.className = 'operator-preview';
+        drawOperatorPreview(canvas, op);
+        
+        div.appendChild(canvas);
+        
+        const nameDiv = document.createElement('div');
+        nameDiv.className = 'operator-name';
+        nameDiv.innerText = op.name;
+        div.appendChild(nameDiv);
+        
+        const roleDiv = document.createElement('div');
+        roleDiv.className = 'operator-role';
+        roleDiv.innerText = op.role;
+        div.appendChild(roleDiv);
+        
+        const statsDiv = document.createElement('div');
+        statsDiv.className = 'operator-stats';
+        statsDiv.innerText = `HP:${op.stats.hp} SPD:${op.stats.speed}%`;
+        div.appendChild(statsDiv);
+        
+        if(!op.unlocked) {
+            const lockIcon = document.createElement('div');
+            lockIcon.className = 'lock-icon';
+            lockIcon.innerText = '🔒';
+            div.appendChild(lockIcon);
+        }
+        
+        div.onclick = () => {
+            if(!op.unlocked) {
+                if(pData.money >= op.cost) {
+                    if(confirm(`解锁 ${op.name} 需要 ${op.cost} 银币，是否购买？`)) {
+                        pData.money -= op.cost;
+                        op.unlocked = true;
+                        renderStashUI();
+                        renderOperatorList();
+                        showMsg(`已解锁干员: ${op.name}`);
+                    }
+                } else {
+                    showMsg(`需要 ${op.cost} 银币来解锁此干员`);
+                }
+                return;
+            }
+            selectedOperator = op;
+            renderOperatorList();
+            document.getElementById('opInfoName').innerText = `${op.name} (${op.role})`;
+            document.getElementById('opInfoDesc').innerText = op.desc;
+        };
+        
+        list.appendChild(div);
+    });
+}
+
+function drawOperatorPreview(canvas, op) {
+    const ctx = canvas.getContext('2d');
+    ctx.fillStyle = '#1a1a2e';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    
+    ctx.save();
+    ctx.translate(40, 45);
+    
+    ctx.fillStyle = op.color;
+    ctx.beginPath();
+    ctx.ellipse(0, 5, 16, 20, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = 'rgba(0,0,0,0.4)';
+    ctx.lineWidth = 2;
+    ctx.stroke();
+    
+    let grad = ctx.createLinearGradient(-12, 0, 12, 0);
+    grad.addColorStop(0, 'rgba(255,255,255,0.1)');
+    grad.addColorStop(0.5, 'rgba(255,255,255,0.2)');
+    grad.addColorStop(1, 'rgba(0,0,0,0.1)');
+    ctx.fillStyle = grad;
+    ctx.beginPath();
+    ctx.ellipse(0, 5, 16, 20, 0, 0, Math.PI * 2);
+    ctx.fill();
+    
+    ctx.fillStyle = op.skinTone;
+    ctx.beginPath();
+    ctx.arc(0, -12, 11, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = 'rgba(0,0,0,0.3)';
+    ctx.lineWidth = 1;
+    ctx.stroke();
+    
+    ctx.fillStyle = 'rgba(0,0,0,0.7)';
+    ctx.beginPath();
+    ctx.ellipse(-4, -13, 2.5, 1.5, 0, 0, Math.PI * 2);
+    ctx.ellipse(4, -13, 2.5, 1.5, 0, 0, Math.PI * 2);
+    ctx.fill();
+    
+    ctx.strokeStyle = 'rgba(0,0,0,0.4)';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.arc(0, -9, 4, 0.1 * Math.PI, 0.9 * Math.PI);
+    ctx.stroke();
+    
+    if(op.hasHelmet) {
+        let helmColor = op.id.includes('heavy') ? '#37474f' : (op.id.includes('sniper') ? '#5d4037' : '#455a64');
+        ctx.fillStyle = helmColor;
+        ctx.beginPath();
+        ctx.arc(0, -14, 13, Math.PI, 0);
+        ctx.fill();
+        ctx.strokeStyle = 'rgba(0,0,0,0.4)';
+        ctx.lineWidth = 1.5;
+        ctx.stroke();
+        
+        ctx.fillStyle = 'rgba(255,255,255,0.15)';
+        ctx.beginPath();
+        ctx.arc(-5, -18, 4, 0, Math.PI * 2);
+        ctx.fill();
+        
+        if(op.id.includes('heavy')) {
+            ctx.fillStyle = '#ff5722';
+            ctx.beginPath();
+            ctx.arc(0, -20, 3, 0, Math.PI * 2);
+            ctx.fill();
+        }
+    }
+    
+    if(op.hasArmor) {
+        grad = ctx.createLinearGradient(-15, 10, 15, 35);
+        grad.addColorStop(0, '#424242');
+        grad.addColorStop(0.5, '#616161');
+        grad.addColorStop(1, '#373737');
+        ctx.fillStyle = grad;
+        ctx.beginPath();
+        ctx.moveTo(-14, -2);
+        ctx.lineTo(14, -2);
+        ctx.lineTo(16, 38);
+        ctx.lineTo(-16, 38);
+        ctx.closePath();
+        ctx.fill();
+        ctx.strokeStyle = '#212121';
+        ctx.lineWidth = 2;
+        ctx.stroke();
+        
+        ctx.fillStyle = '#ff9800';
+        ctx.fillRect(-5, 5, 10, 3);
+        ctx.fillRect(-8, 12, 16, 2);
+        ctx.fillRect(-6, 18, 12, 2);
+        
+        ctx.fillStyle = '#757575';
+        ctx.fillRect(-12, 8, 4, 8);
+        ctx.fillRect(8, 8, 4, 8);
+    }
+    
+    if(op.hasBackpack) {
+        ctx.fillStyle = '#3e2723';
+        ctx.beginPath();
+        ctx.ellipse(18, 20, 6, 12, 0.2, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.strokeStyle = '#5d4037';
+        ctx.lineWidth = 1;
+        ctx.stroke();
+    }
+    
+    ctx.fillStyle = 'rgba(255,255,255,0.1)';
+    ctx.beginPath();
+    ctx.ellipse(-3, 15, 8, 3, -0.3, 0, Math.PI * 2);
+    ctx.fill();
+    
+    ctx.restore();
+}
+
+function confirmOperator() {
+    if(!selectedOperator) {
+        showMsg('请先选择一名干员');
+        return;
+    }
+    
+    if(selectedOperator.weapon && !pData.eqWeapon) {
+        let wItem = { id: selectedOperator.weapon.id, dur: selectedOperator.weapon.dur };
+        pData.backpack.push(wItem);
+    }
+    if(selectedOperator.armor && !pData.eqArmor) {
+        let aItem = { id: selectedOperator.armor.id, dur: selectedOperator.armor.dur };
+        pData.backpack.push(aItem);
+    }
+    if(selectedOperator.helmet && !pData.eqHelmet) {
+        let hItem = { id: selectedOperator.helmet.id, dur: selectedOperator.helmet.dur };
+        pData.backpack.push(hItem);
+    }
+    if(selectedOperator.extraItems) {
+        selectedOperator.extraItems.forEach(item => {
+            pData.backpack.push({ id: item.id, count: item.count });
+        });
+    }
+    
+    playerSkinColor = selectedOperator.skinTone;
+    playerBodyColor = selectedOperator.color;
+    
+    closeOperatorSelect();
+    startGame();
+}
+
+let playerSkinColor = '#ffcc80';
+let playerBodyColor = '#1565c0';
+
+function renderLootList(arr, containerId) {
+    const el = document.getElementById(containerId); el.innerHTML = '';
+    let totalValue = 0;
+    arr.forEach((item, idx) => {
+        const dbInfo = ITEM_DB[item.id]; const div = document.createElement('div'); div.className = `item-slot tier-${dbInfo.tier}`;
+        if (item.revealed === false) {
+            div.innerHTML = `
+                <div class="reveal-overlay">
+                    <div style="font-size:10px;color:#aaa;margin-bottom:2px;">摸索中...</div>
+                    <div class="reveal-bar-bg"><div class="reveal-bar-fill" id="reveal-fill-${idx}"></div></div>
+                </div>
+            `;
+            div.title = "未知物品，正在鉴定";
+        } else {
+            totalValue += dbInfo.val * (item.count || 1);
+            let ammoInfo = '';
+            if(dbInfo.type === 'weapon' && dbInfo.ammo) ammoInfo = `<div style="font-size:9px;color:#ff9800;">[${dbInfo.ammo}]</div>`;
+            div.innerHTML = `<div style="font-size:14px;font-weight:bold;color:#ffeb3b;letter-spacing:-1px;">${dbInfo.icon || ITEM_ICONS[dbInfo.type]}</div><div style="font-weight:bold;font-size:9px;color:#fff;">${dbInfo.name.substring(0,4)}</div><div style="color:#aaa;font-size:9px;">${item.count ? 'x'+item.count : '耐'+(item.dur||1)}</div>${ammoInfo}`;
+            div.onclick = () => {
+                if(calcWeight(pData.backpack) + dbInfo.weight <= 80) { 
+                    pData.backpack.push(item); arr.splice(idx, 1); AUDIO.playLoot(); gameState.stats.loots++; renderLootList(arr, containerId); renderLootMyBag(); updateHUD();
+                } else showMsg("严重超重，无法拾取！");
+            };
+            div.title = `${dbInfo.name} | 价值: ${dbInfo.val} | 重量: ${dbInfo.weight}`;
+        }
+        el.appendChild(div);
+    });
+    if(containerId === 'lootContainerList') {
+        document.getElementById('lootContainerValue').innerText = totalValue.toLocaleString();
+    }
+}
+
