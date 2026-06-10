@@ -2,7 +2,7 @@
 <html lang="zh-CN">
 <head>
     <meta charset="UTF-8">
-    <title>2D 撤离行动 (Extraction 2D)</title>
+    <title>2.5D 战术干员: 撤离行动 (Extraction 2.5D)</title>
     <style>
         body, html { margin: 0; padding: 0; width: 100%; height: 100%; background-color: #111; color: #eee; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; overflow: hidden; user-select: none; }
         
@@ -11,13 +11,13 @@
         .pointer-auto { pointer-events: auto; }
         
         #hudUI.active { display: block; }
-        #stashUI.active, #lootUI.active, #inventoryUI.active, #resultUI.active, #shopUI.active, #operatorSelectUI.active { display: flex; }
+        #stashUI.active, #lootUI.active, #inventoryUI.active, #resultUI.active, #shopUI.active, #operatorSelectUI.active, #upgradeUI.active { display: flex; }
         
         button { background: #333; color: #fff; border: 1px solid #555; padding: 8px 16px; cursor: pointer; font-weight: bold; transition: 0.2s; border-radius: 4px;}
         button:hover { background: #555; border-color: #888; }
         .panel { background: rgba(20, 20, 20, 0.95); border: 2px solid #444; padding: 20px; border-radius: 8px; box-shadow: 0 0 20px rgba(0,0,0,0.8); }
         
-        #stashUI, #shopUI { flex-direction: column; align-items: center; justify-content: center; background: #222; }
+        #stashUI, #shopUI, #upgradeUI { flex-direction: column; align-items: center; justify-content: center; background: #222; }
         .stash-container { display: flex; gap: 15px; width: 95%; height: 85%; }
         .stash-box { flex: 1; background: linear-gradient(180deg, #1e1e1e 0%, #151515 100%); border: 1px solid #3a3a3a; border-radius: 8px; padding: 12px; overflow-y: auto; display: flex; flex-direction: column; box-shadow: 0 4px 12px rgba(0,0,0,0.5); }
         .item-list { display: flex; flex-wrap: wrap; gap: 8px; align-content: flex-start; min-height: 40px; }
@@ -25,14 +25,8 @@
         .item-slot { width: 72px; height: 85px; background: linear-gradient(180deg, #2d2d2d 0%, #222 100%); border: 1px solid #444; border-radius: 6px; display: flex; flex-direction: column; align-items: center; justify-content: center; font-size: 11px; cursor: pointer; position: relative; text-align: center; transition: all 0.15s ease; }
         .item-slot:hover { border-color: #888; transform: translateY(-2px); box-shadow: 0 4px 8px rgba(0,0,0,0.4); }
         .item-slot:active { transform: translateY(0); }
-        .item-tag { font-size: 10px; color: #ddd; background: rgba(0,0,0,0.6); padding: 1px 4px; border-radius: 2px; margin-bottom: 2px; }
         
-        .tier-0 { border-bottom: 3px solid #ccc; } 
-        .tier-1 { border-bottom: 3px solid #4caf50; } 
-        .tier-2 { border-bottom: 3px solid #2196f3; } 
-        .tier-3 { border-bottom: 3px solid #9c27b0; } 
-        .tier-4 { border-bottom: 3px solid #ff9800; } 
-        .tier-5 { border-bottom: 3px solid #e53935; box-shadow: inset 0 0 15px rgba(229, 57, 53, 0.3); } 
+        .tier-0 { border-bottom: 3px solid #ccc; } .tier-1 { border-bottom: 3px solid #4caf50; } .tier-2 { border-bottom: 3px solid #2196f3; } .tier-3 { border-bottom: 3px solid #9c27b0; } .tier-4 { border-bottom: 3px solid #ff9800; } .tier-5 { border-bottom: 3px solid #e53935; box-shadow: inset 0 0 15px rgba(229, 57, 53, 0.3); } 
         
         .reveal-overlay { position: absolute; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.85); display:flex; flex-direction:column; justify-content:center; align-items:center; z-index: 2; border-radius: 6px; }
         .reveal-bar-bg { width: 80%; height: 6px; background: #222; margin-top: 8px; border-radius: 3px; overflow: hidden; border: 1px solid #444; }
@@ -41,6 +35,9 @@
         .filter-btn { padding: 6px 14px; background: #2a2a2a; border: 1px solid #444; border-radius: 20px; cursor: pointer; font-size: 12px; color: #aaa; transition: all 0.2s ease; }
         .filter-btn:hover { background: #383838; color: #fff; }
         .filter-btn.active { background: linear-gradient(180deg, #4caf50, #388e3c); color: #fff; border-color: #4caf50; box-shadow: 0 2px 6px rgba(76,175,80,0.3); }
+        .action-btn { padding: 6px 14px; background: #2196f3; border: 1px solid #1976d2; border-radius: 4px; cursor: pointer; font-size: 12px; color: #fff; font-weight: bold; }
+        .action-btn:hover { background: #1e88e5; }
+        .action-btn.danger { background: #f44336; border-color: #d32f2f; } .action-btn.danger:hover { background: #e53935; }
         
         .clickable-equip { cursor: pointer; padding: 4px 10px; border-radius: 4px; background: #2a2a2a; border: 1px solid #444; transition: all 0.15s; }
         .clickable-equip:hover { background: #3a3a3a; border-color: #666; }
@@ -76,44 +73,40 @@
         .compassneedle .player-marker { color: #03a9f4; font-weight: bold; font-size: 14px; }
         
         .hud-stats { position: absolute; right: 20px; bottom: 20px; background: linear-gradient(180deg, rgba(30,30,30,0.95), rgba(15,15,15,0.95)); padding: 10px 14px; border: 1px solid #444; border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.5); }
-        .hud-stats div { margin-bottom: 4px; font-size: 13px; }
-        .hud-stats div:last-child { margin-bottom: 0; }
+        .hud-stats div { margin-bottom: 4px; font-size: 13px; } .hud-stats div:last-child { margin-bottom: 0; }
         
-        #extractBarContainer { position: absolute; bottom: 80px; left: 50%; transform: translateX(-50%); width: 300px; height: 30px; background: rgba(0,0,0,0.8); border: 2px solid #4caf50; border-radius: 6px; overflow: hidden; display: none; box-shadow: 0 0 20px rgba(76,175,80,0.3); }
+        #extractBarContainer { position: absolute; bottom: 120px; left: 50%; transform: translateX(-50%); width: 300px; height: 30px; background: rgba(0,0,0,0.8); border: 2px solid #4caf50; border-radius: 6px; overflow: hidden; display: none; box-shadow: 0 0 20px rgba(76,175,80,0.3); }
         #extractBar { height: 100%; background: linear-gradient(90deg, #4caf50, #81c784); transition: width 0.2s; }
         #extractText { position: absolute; width: 100%; text-align: center; line-height: 30px; font-size: 13px; font-weight: bold; color: #fff; text-shadow: 1px 1px 2px #000; }
         
+        #skillUI { position: absolute; bottom: 30px; left: 50%; transform: translateX(-50%); display: flex; flex-direction: column; align-items: center; pointer-events: none; }
+        #skillIcon { width: 60px; height: 60px; background: rgba(20, 20, 20, 0.9); border: 3px solid #03a9f4; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 24px; font-weight: bold; color: #fff; position: relative; overflow: hidden; box-shadow: 0 0 15px rgba(3, 169, 244, 0.5); transition: border-color 0.2s; }
+        #skillIcon.cooldown { border-color: #f44336; box-shadow: 0 0 15px rgba(244, 67, 54, 0.5); }
+        #skillCDMask { position: absolute; bottom: 0; left: 0; width: 100%; background: rgba(244, 67, 54, 0.7); transition: height 0.1s linear; display: none; }
+        #skillKey { z-index: 2; text-shadow: 1px 1px 3px #000; }
+        #skillName { font-size: 14px; font-weight: bold; margin-top: 8px; color: #03a9f4; text-shadow: 1px 1px 2px #000; transition: color 0.2s; }
+        #skillName.cooldown { color: #f44336; }
+
         .damage-number { position: absolute; pointer-events: none; font-size: 18px; font-weight: bold; color: #f44336; text-shadow: 1px 1px 2px #000, -1px -1px 2px #000; animation: damageFloat 0.8s ease-out forwards; z-index: 100; }
         @keyframes damageFloat { 0% { opacity: 1; transform: translateY(0) scale(1.2); } 100% { opacity: 0; transform: translateY(-40px) scale(0.8); } }
-        
-        .heal-number { position: absolute; pointer-events: none; font-size: 18px; font-weight: bold; color: #4caf50; text-shadow: 1px 1px 2px #000, -1px -1px 2px #000; animation: damageFloat 0.8s ease-out forwards; z-index: 100; }
-        .hud-stats div { margin-bottom: 2px; }
         
         #lootUI { justify-content: center; align-items: center; background: rgba(0,0,0,0.5); }
         .loot-panel { display: flex; gap: 20px; width: 800px; height: 500px; }
         #inventoryUI { justify-content: center; align-items: center; background: rgba(0,0,0,0.7); }
-        .clickable-equip { cursor: pointer; text-decoration: underline; }
-        .clickable-equip:hover { opacity: 0.7; }
         #resultUI { flex-direction: column; justify-content: center; align-items: center; background: rgba(0,0,0,0.9); }
-        
-        #extractBarContainer { position: absolute; bottom: 100px; left: 50%; transform: translateX(-50%); width: 400px; height: 30px; background: rgba(0,0,0,0.8); border: 2px solid #4caf50; display: none; }
-        #extractBar { height: 100%; background: #4caf50; width: 0%; }
-        #extractText { position: absolute; width: 100%; text-align: center; line-height: 30px; font-weight: bold; }
-        
         #notification { position: absolute; top: 100px; left: 50%; transform: translateX(-50%); background: rgba(0,0,0,0.9); padding: 10px 20px; border-radius: 5px; color: #fff; font-weight: bold; display: none; transition: opacity 0.5s; z-index: 1000;}
         
         #operatorSelectUI { flex-direction: column; align-items: center; justify-content: center; background: rgba(0,0,0,0.95); }
         .operator-container { display: flex; gap: 30px; width: 90%; height: 75%; }
         .operator-list { display: flex; flex-wrap: wrap; gap: 15px; align-content: flex-start; justify-content: center; }
-        .operator-slot { width: 120px; height: 150px; background: #2a2a2a; border: 2px solid #555; border-radius: 8px; display: flex; flex-direction: column; align-items: center; justify-content: center; cursor: pointer; transition: 0.2s; position: relative; }
-        .operator-slot:hover { border-color: #fff; transform: scale(1.05); }
-        .operator-slot.selected { border-color: #4caf50; box-shadow: 0 0 15px rgba(76, 175, 80, 0.5); }
-        .operator-slot.locked { opacity: 0.5; cursor: not-allowed; }
-        .operator-preview { width: 80px; height: 100px; margin-bottom: 5px; }
-        .operator-name { font-size: 12px; font-weight: bold; color: #fff; text-align: center; }
-        .operator-role { font-size: 10px; color: #aaa; text-align: center; }
-        .operator-stats { font-size: 9px; color: #888; text-align: center; margin-top: 2px; }
+        .operator-slot { width: 130px; height: 160px; background: #2a2a2a; border: 2px solid #555; border-radius: 8px; display: flex; flex-direction: column; align-items: center; justify-content: center; cursor: pointer; transition: 0.2s; position: relative; }
+        .operator-slot:hover { border-color: #fff; transform: scale(1.05); } .operator-slot.selected { border-color: #4caf50; box-shadow: 0 0 15px rgba(76, 175, 80, 0.5); } .operator-slot.locked { opacity: 0.5; cursor: not-allowed; }
+        .operator-preview { width: 80px; height: 100px; margin-bottom: 5px; } .operator-name { font-size: 13px; font-weight: bold; color: #fff; text-align: center; } .operator-role { font-size: 11px; color: #aaa; text-align: center; margin-top: 2px; }
         .lock-icon { position: absolute; top: 5px; right: 5px; font-size: 14px; }
+
+        .upg-card { background: #2d2d2d; border: 2px solid #555; border-radius: 8px; width: 200px; padding: 15px; text-align: center; }
+        .upg-card h3 { margin: 0 0 10px 0; color: #4caf50; }
+        .upg-card p { font-size: 12px; color: #aaa; margin: 5px 0 15px 0; }
     </style>
 </head>
 <body>
@@ -122,16 +115,16 @@
     <div class="crosshair" id="crosshair"><div class="dot"></div></div>
     <div id="damageOverlay"></div>
 
-    <!-- UI: 战备仓库 -->
     <div id="stashUI" class="ui-layer active pointer-auto">
-        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:15px;padding:0 20px;">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:15px;padding:0 20px; width: 95%;">
             <h1 style="margin:0;">战备仓库</h1>
             <div style="display:flex;gap:15px;align-items:center;">
                 <div style="background:#1a1a1a;padding:8px 16px;border-radius:20px;border:1px solid #444;">
                     <span style="color:#aaa;">总资产:</span> <span id="totalMoney" style="color:#ffeb3b;font-weight:bold;">0</span> <span style="color:#aaa;">银币</span>
                 </div>
-                <button onclick="showOperatorSelect()" style="background:linear-gradient(180deg,#4caf50,#388e3c);border:none;padding:10px 20px;border-radius:20px;color:#fff;font-size:14px;cursor:pointer;">选择干员并部署</button>
+                <button onclick="showOperatorSelect()" style="background:linear-gradient(180deg,#4caf50,#388e3c);border:none;padding:10px 20px;border-radius:20px;color:#fff;font-size:14px;cursor:pointer;">部署战区</button>
                 <button onclick="openShop()" style="background:linear-gradient(180deg,#ff9800,#f57c00);border:none;padding:10px 20px;border-radius:20px;color:#000;font-size:14px;cursor:pointer;">黑市商人</button>
+                <button onclick="openUpgradeUI()" style="background:linear-gradient(180deg,#9c27b0,#7b1fa2);border:none;padding:10px 20px;border-radius:20px;color:#fff;font-size:14px;cursor:pointer;">科技强化</button>
                 <button onclick="saveGame()" style="background:linear-gradient(180deg,#2196f3,#1976d2);border:none;padding:10px 20px;border-radius:20px;color:#fff;font-size:14px;cursor:pointer;">保存进度</button>
             </div>
         </div>
@@ -139,7 +132,10 @@
             <div class="stash-box" style="flex: 1.3;">
                 <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
                     <h3 style="margin:0;color:#ccc;">永久仓库</h3>
-                    <span style="font-size:11px;color:#888;">点击物品放入背包或装备</span>
+                    <div style="display:flex; gap: 10px;">
+                        <button class="action-btn" onclick="sortStash()">一键整理</button>
+                        <button class="action-btn danger" onclick="sellAllJunk()">出售所有杂物</button>
+                    </div>
                 </div>
                 <div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:12px;">
                     <span onclick="filterStash('all')" class="filter-btn active" id="filter-all">全部</span>
@@ -156,7 +152,7 @@
             </div>
             <div class="stash-box" style="flex: 0.7;">
                 <div style="display:flex;justify-content:space-between;margin-bottom:8px;">
-                    <h3 style="margin:0;font-size:14px;color:#ccc;">负重: <span id="prepWeight">0</span>/40 kg</h3>
+                    <h3 style="margin:0;font-size:14px;color:#ccc;">负重: <span id="prepWeight">0</span> / <span id="prepMaxWeight">40</span> kg</h3>
                 </div>
                 <div style="background:#222;border-radius:6px;padding:10px;margin-bottom:10px;">
                     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
@@ -164,7 +160,6 @@
                         <span style="color:#888;font-size:11px;">0/4格</span>
                     </div>
                     <div id="safeBoxList" class="item-list" style="min-height:60px;"></div>
-                    <div style="color:#666;font-size:10px;margin-top:4px;">* 点击背包物品即可放入安全箱</div>
                 </div>
                 <div style="background:#222;border-radius:6px;padding:10px;margin-bottom:10px;">
                     <div style="color:#ccc;font-size:13px;font-weight:bold;margin-bottom:8px;">当前装备</div>
@@ -189,9 +184,35 @@
         </div>
     </div>
 
-    <!-- UI: 干员选择 -->
+    <!-- 强化舱 UI -->
+    <div id="upgradeUI" class="ui-layer pointer-auto">
+        <div class="panel" style="width: 70%; height: 60%; display: flex; flex-direction: column;">
+            <h2>科技强化舱 <span style="font-size:14px;color:#aaa;font-weight:normal;">(当前银币: <span id="upgMoney" style="color:gold;">0</span>)</span><button onclick="closeUpgradeUI()" style="float:right">返回</button></h2>
+            <div style="display: flex; gap: 20px; justify-content: center; margin-top: 30px;">
+                <div class="upg-card">
+                    <h3>机动系统</h3>
+                    <p>提升基础移动速度</p>
+                    <div style="font-size:24px; font-weight:bold; margin-bottom:10px;" id="upgSpeedLv">Lv.0</div>
+                    <button id="btnUpgSpeed" onclick="buyUpgrade('speed')">升级 (5000)</button>
+                </div>
+                <div class="upg-card">
+                    <h3>外骨骼负重</h3>
+                    <p>提升最大负重上限 (+10kg/级)</p>
+                    <div style="font-size:24px; font-weight:bold; margin-bottom:10px;" id="upgWeightLv">Lv.0</div>
+                    <button id="btnUpgWeight" onclick="buyUpgrade('weight')">升级 (5000)</button>
+                </div>
+                <div class="upg-card">
+                    <h3>纳米维生</h3>
+                    <p>提升基础生命值 (+20HP/级)</p>
+                    <div style="font-size:24px; font-weight:bold; margin-bottom:10px;" id="upgHpLv">Lv.0</div>
+                    <button id="btnUpgHp" onclick="buyUpgrade('hp')">升级 (5000)</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <div id="operatorSelectUI" class="ui-layer pointer-auto">
-        <h1 style="margin-top: 10px; margin-bottom: 5px;">选择干员</h1>
+        <h1 style="margin-top: 10px; margin-bottom: 5px;">选择特战干员</h1>
         <div id="difficultySelect" style="margin-bottom: 15px; padding: 12px; background: rgba(0,0,0,0.4); border-radius: 8px;">
             <div style="margin-bottom: 8px; font-size: 14px; color: #aaa;">选择战区难度:</div>
             <div style="display: flex; gap: 15px;">
@@ -216,13 +237,12 @@
         <div class="operator-container">
             <div class="operator-list" id="operatorList"></div>
         </div>
-        <div id="selectedOperatorInfo" style="margin-top: 10px; padding: 10px; background: rgba(0,0,0,0.5); border-radius: 5px; min-height: 60px;">
+        <div id="selectedOperatorInfo" style="margin-top: 10px; padding: 15px; background: rgba(0,0,0,0.6); border-radius: 5px; min-height: 80px; width: 60%; border-left: 4px solid #03a9f4;">
             <h3 id="opInfoName" style="margin: 0 0 5px 0;">选择一名干员</h3>
-            <p id="opInfoDesc" style="margin: 0; color: #aaa; font-size: 14px;">选择后将携带该干员的特殊装备进入战区</p>
+            <p id="opInfoDesc" style="margin: 0; color: #ccc; font-size: 14px; line-height: 1.5;">选择后将携带该干员的特殊装备与独有战术技能进入战区</p>
         </div>
     </div>
 
-    <!-- UI: 黑市商店 -->
     <div id="shopUI" class="ui-layer pointer-auto">
         <div class="panel" style="width: 80%; height: 80%; display: flex; flex-direction: column;">
             <h2 style="margin-top: 0;">黑市商人 (当前银币: <span id="shopMoney" style="color:gold;">0</span>) 
@@ -250,7 +270,7 @@
         </div>
     </div>
 
-    <!-- UI: 局内 HUD -->
+    <!-- HUD 界面 -->
     <div id="hudUI" class="ui-layer">
         <div class="hud-bar-container">
             <div class="bar-bg"><div id="hpFill" class="bar-fill" style="width: 100%; background: linear-gradient(90deg, #d32f2f, #f44336);"></div><div id="hpText" class="bar-text">HP 100/100</div></div>
@@ -281,15 +301,19 @@
             <div>📦 搜刮: <span id="hudLoots" style="color:#4caf50">0</span></div>
             <div>💰 价值: <span id="hudCarryValue" style="color:#ffeb3b">0</span></div>
         </div>
+        
+        <div id="skillUI">
+            <div id="skillIcon"><span id="skillKey">Q</span><div id="skillCDMask"></div></div>
+            <div id="skillName">准备就绪</div>
+        </div>
+        
         <div id="extractBarContainer">
-            <div id="extractBar"></div>
-            <div id="extractText">正在撤离... 15s</div>
+            <div id="extractBar"></div><div id="extractText">正在撤离... 15s</div>
         </div>
         <div id="killFeed"></div>
         <div id="enemyWarning"></div>
     </div>
 
-    <!-- UI: 搜刮面板 -->
     <div id="lootUI" class="ui-layer pointer-auto">
         <div class="panel loot-panel">
             <div class="stash-box">
@@ -297,19 +321,18 @@
                     <h3 style="margin:0;">容器物资</h3>
                     <div style="display:flex;gap:15px;align-items:center;">
                         <span style="color:#4caf50;font-size:14px;">当前价值: <span id="lootContainerValue" style="font-weight:bold;">0</span></span>
-                        <button onclick="lootAll()" style="background:#4caf50;border:none;padding:6px 14px;border-radius:15px;color:#fff;cursor:pointer;">全部拾取已探明</button>
+                        <button onclick="lootAll()" style="background:#4caf50;border:none;padding:6px 14px;border-radius:15px;color:#fff;cursor:pointer;">全部拾取</button>
                     </div>
                 </div>
                 <div id="lootContainerList" class="item-list"></div>
             </div>
             <div class="stash-box">
-                <h3>我的背包 (空间: <span id="lootBagWeight">0</span>/40) <span style="font-size:12px;font-weight:normal;color:#4caf50;">价值: <span id="lootBagValue">0</span></span> <button onclick="closeLoot()" style="float:right">关闭 [F/ESC]</button></h3>
+                <h3>我的背包 (空间: <span id="lootBagWeight">0</span> / <span class="max-weight-disp">40</span>) <span style="font-size:12px;color:#4caf50;">价值: <span id="lootBagValue">0</span></span> <button onclick="closeLoot()" style="float:right">关闭 [F/ESC]</button></h3>
                 <div id="lootMyBagList" class="item-list"></div>
             </div>
         </div>
     </div>
 
-    <!-- UI: 背包面板 -->
     <div id="inventoryUI" class="ui-layer pointer-auto">
         <div class="panel stash-container" style="width: 60%; height: 60%;">
             <div class="stash-box">
@@ -322,13 +345,12 @@
                 <div id="invSafeBox" class="item-list"></div>
             </div>
             <div class="stash-box">
-                <h3>背包物资 <span style="font-size:14px;font-weight:normal;">(左键: 装备武器/护甲 或 丢弃其它)</span></h3>
+                <h3>背包物资 <span style="font-size:14px;font-weight:normal;">(左键: 装备或丢弃)</span></h3>
                 <div id="invBackpack" class="item-list"></div>
             </div>
         </div>
     </div>
 
-    <!-- UI: 结算面板 -->
     <div id="resultUI" class="ui-layer pointer-auto panel" style="width: 50%; height: 60%; left: 25%; top: 20%;">
         <h1 id="resultTitle" style="text-align:center">撤离成功</h1>
         <div style="font-size: 18px; margin: 20px 0; line-height: 1.8;">
@@ -347,86 +369,56 @@
 <script>
 const OPERATORS = [
     {
-        id: 'op_assaulter', name: '突击手', role: '进攻型', unlocked: true, cost: 0,
-        desc: '标准突击兵，平衡的属性，适合新手',
-        color: '#d32f2f', skinTone: '#e0b496', hasHelmet: false, hasArmor: false, hasBackpack: true,
-        stats: { hp: 100, stam: 100, speed: 100, armor: 0 }
+        id: 'op_vyron', name: '威龙 (Vyron)', role: '突击干员', unlocked: true, cost: 0,
+        desc: '高度机动的突击手。\n战术技能 [Q]: 投掷C4(短距离)，引发大范围致命爆炸。',
+        color: '#ff5722', skinTone: '#e0b496', hasHelmet: true, hasArmor: false, hasBackpack: true,
+        skill: 'c4', cooldown: 10,
+        weapon: { id: 'w_ar', dur: 200 },
+        stats: { hp: 110, stam: 110, speed: 105, armor: 10 }
     },
     {
-        id: 'op_tanker', name: '重装兵', role: '防御型', unlocked: true, cost: 0,
-        desc: '装备重型防弹衣，生命值高但移速较慢',
-        color: '#7b1fa2', skinTone: '#c68642', hasHelmet: true, hasArmor: true, hasBackpack: true,
-        armor: { id: 'ar_2', dur: 100 }, helmet: { id: 'hl_2', dur: 80 },
-        stats: { hp: 130, stam: 70, speed: 70, armor: 40 }
+        id: 'op_redwolf', name: '红狼 (Red Wolf)', role: '战术干员', unlocked: true, cost: 0,
+        desc: '重装压制型战士。\n战术技能 [Q]: 射出高爆战术手炮，飞行速度极快，触碰立刻引发小范围爆炸。',
+        color: '#d32f2f', skinTone: '#c68642', hasHelmet: true, hasArmor: true, hasBackpack: true,
+        skill: 'handcannon', cooldown: 10,
+        weapon: { id: 'w_ak', dur: 250 }, armor: { id: 'ar_2', dur: 100 }, helmet: { id: 'hl_2', dur: 80 },
+        stats: { hp: 130, stam: 90, speed: 90, armor: 30 }
     },
     {
-        id: 'op_scout', name: '侦察兵', role: '速度型', unlocked: true, cost: 0,
-        desc: '轻装上阵，移速极快，适合搜刮和撤离',
-        color: '#388e3c', skinTone: '#ffdbac', hasHelmet: false, hasArmor: false, hasBackpack: false,
-        stats: { hp: 80, stam: 120, speed: 130, armor: 0 }
+        id: 'op_luna', name: '露娜 (Luna)', role: '侦察干员', unlocked: true, cost: 0,
+        desc: '轻装上阵的侦察兵。\n战术技能 [Q]: 射出电击箭，在落点形成一片持续的强力电场，不断伤害范围内敌人。',
+        color: '#03a9f4', skinTone: '#ffdbac', hasHelmet: false, hasArmor: false, hasBackpack: false,
+        skill: 'electric_arrow', cooldown: 10,
+        weapon: { id: 'w_vss', dur: 200 },
+        stats: { hp: 90, stam: 130, speed: 120, armor: 0 }
     },
     {
-        id: 'op_sniper', name: '狙击手', role: '远程型', unlocked: true, cost: 0,
-        desc: '配备狙击枪，适合远距离作战',
-        color: '#1976d2', skinTone: '#e0b496', hasHelmet: true, hasArmor: false, hasBackpack: true,
-        weapon: { id: 'w_dmr', dur: 200 }, helmet: { id: 'hl_1', dur: 30 },
-        stats: { hp: 90, stam: 90, speed: 90, armor: 20 }
-    },
-    {
-        id: 'op_medic', name: '医疗兵', role: '支援型', unlocked: true, cost: 0,
-        desc: '携带大量医疗物资，团队生存能力更强',
-        color: '#fbc02d', skinTone: '#c68642', hasHelmet: false, hasArmor: true, hasBackpack: true,
-        armor: { id: 'ar_1', dur: 50 },
-        extraItems: [{ id: 'm_kit', count: 3 }, { id: 'm_band', count: 5 }, { id: 'm_stam', count: 2 }],
-        stats: { hp: 100, stam: 110, speed: 85, armor: 20 }
-    },
-    {
-        id: 'op_breacher', name: '破门手', role: '突击型', unlocked: true, cost: 0,
-        desc: '携带霰弹枪和大量手雷，擅长近战',
-        color: '#ff5722', skinTone: '#e0b496', hasHelmet: true, hasArmor: true, hasBackpack: true,
-        weapon: { id: 'w_shotgun', dur: 100 }, armor: { id: 'ar_1', dur: 50 }, helmet: { id: 'hl_1', dur: 30 },
-        extraItems: [{ id: 't_grenade', count: 4 }],
-        stats: { hp: 110, stam: 80, speed: 80, armor: 30 }
-    },
-    {
-        id: 'op_heavy', name: '火力支援', role: '压制型', unlocked: true, cost: 0,
-        desc: '装备轻机枪，持续火力压制',
-        color: '#455a64', skinTone: '#c68642', hasHelmet: true, hasArmor: true, hasBackpack: true,
-        weapon: { id: 'w_lmg', dur: 400 }, armor: { id: 'ar_2', dur: 100 }, helmet: { id: 'hl_2', dur: 80 },
-        extraItems: [{ id: 'a_556', count: 100 }],
-        stats: { hp: 120, stam: 60, speed: 55, armor: 50 }
-    },
-    {
-        id: 'op_ghost', name: '幽灵', role: '隐匿型', unlocked: true, cost: 0,
-        desc: '轻装高速，不携带显眼装备，减少敌人发现概率',
-        color: '#212121', skinTone: '#ffdbac', hasHelmet: false, hasArmor: false, hasBackpack: false,
-        stats: { hp: 70, stam: 130, speed: 140, armor: 0 }
+        id: 'op_stinger', name: '蜂医 (Stinger)', role: '支援干员', unlocked: true, cost: 0,
+        desc: '前线医疗专家。\n战术技能 [Q]: 使用激素注射枪，瞬间恢复自身50点生命并回满体力。',
+        color: '#fbc02d', skinTone: '#e0b496', hasHelmet: false, hasArmor: true, hasBackpack: true,
+        skill: 'heal', cooldown: 10,
+        weapon: { id: 'w_smg', dur: 200 }, armor: { id: 'ar_1', dur: 50 },
+        extraItems: [{ id: 'm_kit', count: 2 }],
+        stats: { hp: 100, stam: 100, speed: 100, armor: 10 }
     }
 ];
 
-let selectedOperator = null;
-let selectedDifficulty = 'normal';
+let selectedOperator = null; let selectedDifficulty = 'normal';
 
 const DIFFICULTY = {
-    normal: { name: '普通', color: '#4caf50', enemySpeedMult: 0.7, enemyFireRateMult: 1.4, enemyDmgMult: 0.7, enemyCountMult: 0.6, lootQualityMult: 0.8, desc: '适合新手，敌人较弱' },
-    secret: { name: '机密', color: '#ff9800', enemySpeedMult: 1.0, enemyFireRateMult: 1.0, enemyDmgMult: 1.0, enemyCountMult: 1.0, lootQualityMult: 1.2, desc: '中等难度，平衡挑战' },
-    topsecret: { name: '绝密', color: '#f44336', enemySpeedMult: 1.4, enemyFireRateMult: 0.7, enemyDmgMult: 1.5, enemyCountMult: 1.5, lootQualityMult: 1.8, desc: '高难度，敌人凶猛' }
+    normal: { name: '普通', color: '#4caf50', enemySpeedMult: 0.7, enemyFireRateMult: 1.4, enemyDmgMult: 0.7, enemyCountMult: 0.6, lootQualityMult: 0.8 },
+    secret: { name: '机密', color: '#ff9800', enemySpeedMult: 1.0, enemyFireRateMult: 1.0, enemyDmgMult: 1.0, enemyCountMult: 1.0, lootQualityMult: 1.2 },
+    topsecret: { name: '绝密', color: '#f44336', enemySpeedMult: 1.4, enemyFireRateMult: 0.7, enemyDmgMult: 1.5, enemyCountMult: 1.5, lootQualityMult: 1.8 }
 };
 
-const CFG = {
-    FPS: 60,
-    MAP_W: 3000, MAP_H: 3000,
-    RAID_TIME: 1200, 
+let CFG = {
+    FPS: 60, MAP_W: 3000, MAP_H: 3000, RAID_TIME: 1200, 
     PLAYER_MAX_HP: 100, PLAYER_MAX_STAM: 100,
-    BASE_SPEED: 4, RUN_MULT: 1.8,
-    EXTRACT_TIME: 15, SEARCH_TIME: 2.0,
-    ENEMY_COUNT: 25, CONTAINER_COUNT: 80
+    BASE_SPEED: 4, RUN_MULT: 1.8, JUMP_FORCE: 12, GRAVITY: 0.8,
+    EXTRACT_TIME: 15, SEARCH_TIME: 2.0, ENEMY_COUNT: 25, CONTAINER_COUNT: 80
 };
-
-const TAG_MAP = { 'weapon': '武器', 'armor': '防具', 'helmet': '防具', 'ammo': '子弹', 'med': '消耗', 'throwable': '消耗', 'valuable': '收藏', 'junk': '杂物' };
 
 const ITEM_ICONS = { 'weapon': '?', 'armor': '⊞', 'helmet': '◯', 'ammo': '▪', 'med': '十', 'throwable': '⬤', 'valuable': '◆', 'junk': '▭' };
-
 const ITEM_DB = {
     'w_pistol': { name: 'M1911手枪', type: 'weapon', ammo: '9mm', mag: 7, dmg: 35, fireRate: 400, auto: false, spread: 0.05, weight: 1, val: 300, dur: 100, tier: 0, icon: '⌐' },
     'w_smg': { name: 'MP5冲锋枪', type: 'weapon', ammo: '9mm', mag: 30, dmg: 20, fireRate: 800, auto: true, spread: 0.1, weight: 2.5, val: 1200, dur: 200, tier: 1, icon: '⌐▄' },
@@ -492,39 +484,33 @@ const SHOP_ITEMS = ['w_pistol', 'w_glock', 'w_smg', 'w_vector', 'w_ak', 'w_fal',
 let audioCtx;
 const AUDIO = {
     playShoot(type) {
-        if(!audioCtx) return;
-        const osc = audioCtx.createOscillator(); const gain = audioCtx.createGain();
-        osc.connect(gain); gain.connect(audioCtx.destination);
+        if(!audioCtx) return; const osc = audioCtx.createOscillator(); const gain = audioCtx.createGain(); osc.connect(gain); gain.connect(audioCtx.destination);
         if(type === 'w_shotgun') { osc.type = 'square'; osc.frequency.setValueAtTime(100, audioCtx.currentTime); osc.frequency.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.3); gain.gain.setValueAtTime(0.35, audioCtx.currentTime); gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.3);
         } else if(type === 'w_sniper' || type === 'w_dmr') { osc.type = 'sawtooth'; osc.frequency.setValueAtTime(200, audioCtx.currentTime); osc.frequency.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.5); gain.gain.setValueAtTime(0.3, audioCtx.currentTime); gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.5);
         } else if(type === 'w_lmg') { osc.type = 'sawtooth'; osc.frequency.setValueAtTime(180, audioCtx.currentTime); osc.frequency.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.1); gain.gain.setValueAtTime(0.25, audioCtx.currentTime); gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.1);
         } else if(type === 'w_ak') { osc.type = 'square'; osc.frequency.setValueAtTime(600, audioCtx.currentTime); osc.frequency.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.15); gain.gain.setValueAtTime(0.25, audioCtx.currentTime); gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.15);
         } else if(type === 'w_ar') { osc.type = 'square'; osc.frequency.setValueAtTime(700, audioCtx.currentTime); osc.frequency.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.12); gain.gain.setValueAtTime(0.22, audioCtx.currentTime); gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.12);
-        } else if(type === 'w_smg') { osc.type = 'square'; osc.frequency.setValueAtTime(900, audioCtx.currentTime); osc.frequency.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.08); gain.gain.setValueAtTime(0.2, audioCtx.currentTime); gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.08);
+        } else if(type === 'w_smg' || type === 'w_vss') { osc.type = 'square'; osc.frequency.setValueAtTime(900, audioCtx.currentTime); osc.frequency.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.08); gain.gain.setValueAtTime(0.2, audioCtx.currentTime); gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.08);
         } else { osc.type = 'square'; osc.frequency.setValueAtTime(800, audioCtx.currentTime); osc.frequency.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.1); gain.gain.setValueAtTime(0.25, audioCtx.currentTime); gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.1); }
         osc.start(); osc.stop(audioCtx.currentTime + 0.5);
     },
     playHit() {
-        if(!audioCtx) return;
-        const osc = audioCtx.createOscillator(); const gain = audioCtx.createGain(); osc.connect(gain); gain.connect(audioCtx.destination);
+        if(!audioCtx) return; const osc = audioCtx.createOscillator(); const gain = audioCtx.createGain(); osc.connect(gain); gain.connect(audioCtx.destination);
         osc.type = 'triangle'; osc.frequency.setValueAtTime(200, audioCtx.currentTime); osc.frequency.linearRampToValueAtTime(60, audioCtx.currentTime + 0.1);
         gain.gain.setValueAtTime(0.4, audioCtx.currentTime); gain.gain.linearRampToValueAtTime(0.01, audioCtx.currentTime + 0.1); osc.start(); osc.stop(audioCtx.currentTime + 0.1);
     },
     playPlayerHit() {
-        if(!audioCtx) return;
-        const osc = audioCtx.createOscillator(); const gain = audioCtx.createGain(); osc.connect(gain); gain.connect(audioCtx.destination);
+        if(!audioCtx) return; const osc = audioCtx.createOscillator(); const gain = audioCtx.createGain(); osc.connect(gain); gain.connect(audioCtx.destination);
         osc.type = 'sawtooth'; osc.frequency.setValueAtTime(100, audioCtx.currentTime); osc.frequency.linearRampToValueAtTime(50, audioCtx.currentTime + 0.15);
         gain.gain.setValueAtTime(0.3, audioCtx.currentTime); gain.gain.linearRampToValueAtTime(0.01, audioCtx.currentTime + 0.15); osc.start(); osc.stop(audioCtx.currentTime + 0.15);
     },
     playLoot() {
-        if(!audioCtx) return;
-        const osc = audioCtx.createOscillator(); const gain = audioCtx.createGain(); osc.connect(gain); gain.connect(audioCtx.destination);
+        if(!audioCtx) return; const osc = audioCtx.createOscillator(); const gain = audioCtx.createGain(); osc.connect(gain); gain.connect(audioCtx.destination);
         osc.type = 'sine'; osc.frequency.setValueAtTime(1000 + Math.random() * 400, audioCtx.currentTime); osc.frequency.setValueAtTime(1500 + Math.random() * 400, audioCtx.currentTime + 0.05);
         gain.gain.setValueAtTime(0.12, audioCtx.currentTime); gain.gain.linearRampToValueAtTime(0.01, audioCtx.currentTime + 0.1); osc.start(); osc.stop(audioCtx.currentTime + 0.1);
     },
     playExplosion() {
-        if(!audioCtx) return;
-        const bufferSize = audioCtx.sampleRate * 0.6; const buffer = audioCtx.createBuffer(1, bufferSize, audioCtx.sampleRate);
+        if(!audioCtx) return; const bufferSize = audioCtx.sampleRate * 0.6; const buffer = audioCtx.createBuffer(1, bufferSize, audioCtx.sampleRate);
         const data = buffer.getChannelData(0); for (let i = 0; i < bufferSize; i++) data[i] = Math.random() * 2 - 1;
         const noise = audioCtx.createBufferSource(); noise.buffer = buffer;
         const filter = audioCtx.createBiquadFilter(); filter.type = 'lowpass'; filter.frequency.value = 800;
@@ -532,120 +518,135 @@ const AUDIO = {
         noise.connect(filter); filter.connect(gain); gain.connect(audioCtx.destination); noise.start();
     },
     playDeath() {
-        if(!audioCtx) return;
-        const osc = audioCtx.createOscillator(); const gain = audioCtx.createGain(); osc.connect(gain); gain.connect(audioCtx.destination);
+        if(!audioCtx) return; const osc = audioCtx.createOscillator(); const gain = audioCtx.createGain(); osc.connect(gain); gain.connect(audioCtx.destination);
         osc.type = 'sawtooth'; osc.frequency.setValueAtTime(250, audioCtx.currentTime); osc.frequency.exponentialRampToValueAtTime(30, audioCtx.currentTime + 1);
         gain.gain.setValueAtTime(0.4, audioCtx.currentTime); gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 1); osc.start(); osc.stop(audioCtx.currentTime + 1);
-    },
-    playReload() {
-        if(!audioCtx) return;
-        const bufferSize = audioCtx.sampleRate * 0.4; const buffer = audioCtx.createBuffer(1, bufferSize, audioCtx.sampleRate);
-        const data = buffer.getChannelData(0); for (let i = 0; i < bufferSize; i++) data[i] = (Math.random() * 2 - 1) * 0.3;
-        const noise = audioCtx.createBufferSource(); noise.buffer = buffer;
-        const filter = audioCtx.createBiquadFilter(); filter.type = 'bandpass'; filter.frequency.value = 2000; filter.Q.value = 2;
-        const gain = audioCtx.createGain(); gain.gain.setValueAtTime(0.15, audioCtx.currentTime); gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.4);
-        noise.connect(filter); filter.connect(gain); gain.connect(audioCtx.destination); noise.start();
-    },
-    playStep() {
-        if(!audioCtx) return;
-        const osc = audioCtx.createOscillator(); const gain = audioCtx.createGain(); osc.connect(gain); gain.connect(audioCtx.destination);
-        osc.type = 'triangle'; osc.frequency.setValueAtTime(80 + Math.random() * 40, audioCtx.currentTime);
-        gain.gain.setValueAtTime(0.06, audioCtx.currentTime); gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.08); osc.start(); osc.stop(audioCtx.currentTime + 0.08);
-    },
-    playEnemyAlert() {
-        if(!audioCtx) return;
-        const osc = audioCtx.createOscillator(); const gain = audioCtx.createGain(); osc.connect(gain); gain.connect(audioCtx.destination);
-        osc.type = 'square'; osc.frequency.setValueAtTime(400, audioCtx.currentTime); osc.frequency.setValueAtTime(600, audioCtx.currentTime + 0.1); osc.frequency.setValueAtTime(400, audioCtx.currentTime + 0.2);
-        gain.gain.setValueAtTime(0.15, audioCtx.currentTime); gain.gain.linearRampToValueAtTime(0.01, audioCtx.currentTime + 0.25); osc.start(); osc.stop(audioCtx.currentTime + 0.25);
-    },
-    playHeal() {
-        if(!audioCtx) return;
-        const osc = audioCtx.createOscillator(); const gain = audioCtx.createGain(); osc.connect(gain); gain.connect(audioCtx.destination);
-        osc.type = 'sine'; osc.frequency.setValueAtTime(600, audioCtx.currentTime); osc.frequency.linearRampToValueAtTime(1200, audioCtx.currentTime + 0.2);
-        gain.gain.setValueAtTime(0.15, audioCtx.currentTime); gain.gain.linearRampToValueAtTime(0.01, audioCtx.currentTime + 0.2); osc.start(); osc.stop(audioCtx.currentTime + 0.2);
     }
 };
 
 let pData = {
     money: 8000, 
     stash: [ {id: 'w_pistol', dur: 100}, {id: 'a_9mm', count: 30}, {id: 'm_band', count: 1}, {id: 'w_smg', dur: 200}, {id: 'ar_1', dur: 50}, {id: 't_grenade', count: 2} ],
-    safeBox: [], backpack: [], eqWeapon: null, eqArmor: null, eqHelmet: null
+    safeBox: [], backpack: [], eqWeapon: null, eqArmor: null, eqHelmet: null,
+    upgrades: { speed: 0, weight: 0, hp: 0 } // 新增强化系统数据
 };
 
 let gameState = {
     inRaid: false, paused: false, timeRemain: CFG.RAID_TIME, camera: { x: 0, y: 0 }, stats: { kills: 0, loots: 0, startValue: 0 },
     extracting: false, extractTimer: 0, searching: false, searchTimer: 0, searchTarget: null, searchStartX: 0, searchStartY: 0,
-    mouseX: 0, mouseY: 0, keys: {}, isShooting: false, lastDamageTime: 0, screenShakeTime: 0
+    mouseX: 0, mouseY: 0, keys: {}, isShooting: false, lastDamageTime: 0, screenShakeTime: 0, nearestInteractable: null
 };
 
-let mapEntities = { walls: [], containers: [], enemies: [], bullets: [], particles: [], extracts: [], corpses: [], smokeGrenades: [] };
+let mapEntities = { platforms: [], walls: [], containers: [], enemies: [], bullets: [], particles: [], extracts: [], corpses: [], smokeGrenades: [], c4s: [], fields: [] };
 
-let player = {
-    x: 0, y: 0, radius: 15, hp: CFG.PLAYER_MAX_HP, stam: CFG.PLAYER_MAX_STAM,
-    weaponDur: 0, armorDur: 0, helmDur: 0, ammoLoaded: 0, ammoTotal: 0, lastFire: 0, isRunning: false, angle: 0
-};
-
-let killFeed = [];
-let muzzleFlashes = [];
+let player = { x: 0, y: 0, z: 0, vz: 0, radius: 15, hp: 100, stam: 100, weaponDur: 0, armorDur: 0, helmDur: 0, ammoLoaded: 0, ammoTotal: 0, lastFire: 0, isRunning: false, isJumping: false, angle: 0, lastSkillTime: 0 };
+let killFeed = []; let muzzleFlashes = [];
 
 function uuid() { return Math.random().toString(36).substr(2, 9); }
 function dist(x1, y1, x2, y2) { return Math.hypot(x1 - x2, y1 - y2); }
+function dist3D(x1, y1, z1, x2, y2, z2) { return Math.hypot(Math.hypot(x1 - x2, y1 - y2), z1 - z2); }
 function randInt(min, max) { return Math.floor(Math.random() * (max - min + 1)) + min; }
 function getItemValue(itemObj) { return ITEM_DB[itemObj.id].val * (itemObj.count || 1); }
 function calcWeight(arr) { return arr.reduce((sum, item) => sum + (ITEM_DB[item.id].weight * (item.count || 1)), 0); }
-function showMsg(msg) {
-    const d = document.getElementById('notification'); d.innerText = msg; d.style.display = 'block'; d.style.opacity = 1;
-    setTimeout(() => d.style.opacity = 0, 2000); setTimeout(() => d.style.display = 'none', 2500);
+function showMsg(msg) { const d = document.getElementById('notification'); d.innerText = msg; d.style.display = 'block'; d.style.opacity = 1; setTimeout(() => d.style.opacity = 0, 2000); setTimeout(() => d.style.display = 'none', 2500); }
+
+function saveGame() { localStorage.setItem('extraction_save_v2', JSON.stringify(pData)); showMsg("存档成功！"); }
+function loadGame() { const saved = localStorage.getItem('extraction_save_v2'); if(saved) { try { let parsed = JSON.parse(saved); Object.assign(pData, parsed); if(!pData.upgrades) pData.upgrades = {speed:0, weight:0, hp:0}; } catch(e) { console.error(e); } } }
+
+// 新增功能：一键整理
+function sortStash() {
+    pData.stash.sort((a, b) => {
+        let dbA = ITEM_DB[a.id], dbB = ITEM_DB[b.id];
+        if(dbA.type !== dbB.type) return dbA.type.localeCompare(dbB.type);
+        if(dbA.tier !== dbB.tier) return dbB.tier - dbA.tier;
+        return dbB.val - dbA.val;
+    });
+    renderStashUI(); showMsg("仓库已整理");
 }
 
-// ---- 新增: 存取档系统 ----
-function saveGame() {
-    localStorage.setItem('extraction_save_v1', JSON.stringify(pData));
-    showMsg("存档成功！");
+// 新增功能：出售所有杂物
+function sellAllJunk() {
+    let junkItems = pData.stash.filter(i => ITEM_DB[i.id].type === 'junk');
+    if(junkItems.length === 0) { showMsg("没有可出售的杂物"); return; }
+    let total = 0; junkItems.forEach(item => { total += Math.floor(ITEM_DB[item.id].val * (item.count || 1) * 0.9); });
+    pData.stash = pData.stash.filter(i => ITEM_DB[i.id].type !== 'junk');
+    pData.money += total;
+    if(!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    if(audioCtx.state === 'suspended') audioCtx.resume();
+    AUDIO.playLoot(); renderStashUI(); showMsg(`已出售所有杂物，获得 ${total} 银币`);
 }
-function loadGame() {
-    const saved = localStorage.getItem('extraction_save_v1');
-    if(saved) {
-        try {
-            Object.assign(pData, JSON.parse(saved));
-            console.log("存档加载成功");
-        } catch(e) { console.error("读取存档失败", e); }
+
+// 新增功能：强化舱
+function openUpgradeUI() { document.getElementById('stashUI').classList.remove('active'); document.getElementById('upgradeUI').classList.add('active'); renderUpgradeUI(); }
+function closeUpgradeUI() { document.getElementById('upgradeUI').classList.remove('active'); document.getElementById('stashUI').classList.add('active'); renderStashUI(); }
+function renderUpgradeUI() {
+    document.getElementById('upgMoney').innerText = pData.money;
+    document.getElementById('upgSpeedLv').innerText = `Lv.${pData.upgrades.speed}`;
+    document.getElementById('upgWeightLv').innerText = `Lv.${pData.upgrades.weight}`;
+    document.getElementById('upgHpLv').innerText = `Lv.${pData.upgrades.hp}`;
+    
+    let costSpeed = (pData.upgrades.speed + 1) * 5000;
+    let btnSpeed = document.getElementById('btnUpgSpeed');
+    if(pData.upgrades.speed >= 5) { btnSpeed.innerText = "已满级"; btnSpeed.disabled = true; } else { btnSpeed.innerText = `升级 (${costSpeed})`; btnSpeed.disabled = false; }
+    
+    let costWeight = (pData.upgrades.weight + 1) * 5000;
+    let btnWeight = document.getElementById('btnUpgWeight');
+    if(pData.upgrades.weight >= 5) { btnWeight.innerText = "已满级"; btnWeight.disabled = true; } else { btnWeight.innerText = `升级 (${costWeight})`; btnWeight.disabled = false; }
+    
+    let costHp = (pData.upgrades.hp + 1) * 5000;
+    let btnHp = document.getElementById('btnUpgHp');
+    if(pData.upgrades.hp >= 5) { btnHp.innerText = "已满级"; btnHp.disabled = true; } else { btnHp.innerText = `升级 (${costHp})`; btnHp.disabled = false; }
+}
+function buyUpgrade(type) {
+    if(pData.upgrades[type] >= 5) return;
+    let cost = (pData.upgrades[type] + 1) * 5000;
+    if(pData.money >= cost) {
+        pData.money -= cost; pData.upgrades[type]++;
+        if(!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        if(audioCtx.state === 'suspended') audioCtx.resume();
+        AUDIO.playLoot(); renderUpgradeUI(); showMsg("升级成功！");
+    } else showMsg("银币不足！");
+}
+
+function getMaxWeight() { return 40 + (pData.upgrades.weight * 10); }
+
+function getGroundZ(x, y) {
+    let highest = 0;
+    for(let i=0; i<mapEntities.platforms.length; i++) {
+        let p = mapEntities.platforms[i];
+        if(x >= p.x && x <= p.x + p.w && y >= p.y && y <= p.y + p.h) { if(p.z > highest) highest = p.z; }
     }
+    return highest;
 }
-// ------------------------
+function getHighestZ(cx, cy, r) { return Math.max(getGroundZ(cx-r, cy-r), getGroundZ(cx+r, cy-r), getGroundZ(cx-r, cy+r), getGroundZ(cx+r, cy+r)); }
+function checkWallCollision(cx, cy, r) {
+    for(let i=0; i<mapEntities.walls.length; i++) {
+        let w = mapEntities.walls[i];
+        let testX = cx, testY = cy; 
+        if (cx < w.x) testX = w.x; else if (cx > w.x + w.w) testX = w.x + w.w;
+        if (cy < w.y) testY = w.y; else if (cy > w.y + w.h) testY = w.y + w.h; 
+        if (Math.hypot(cx - testX, cy - testY) <= r) return true;
+    }
+    return false;
+}
 
 function init() {
-    loadGame(); // 页面加载时自动读取存档
-    
+    loadGame(); 
     window.addEventListener('keydown', e => { gameState.keys[e.key.toLowerCase()] = true; handleKeyPress(e.key.toLowerCase()); });
     window.addEventListener('keyup', e => gameState.keys[e.key.toLowerCase()] = false);
     window.addEventListener('mouseup', e => { if(e.button === 0) gameState.isShooting = false; });
-    
     const cvs = document.getElementById('gameCanvas'); cvs.width = window.innerWidth; cvs.height = window.innerHeight;
     cvs.addEventListener('mousemove', e => { gameState.mouseX = e.clientX; gameState.mouseY = e.clientY; const ch = document.getElementById('crosshair'); ch.style.left = e.clientX + 'px'; ch.style.top = e.clientY + 'px'; });
     cvs.addEventListener('mousedown', e => { if(e.button === 0) { gameState.isShooting = true; if(gameState.inRaid && !gameState.paused) playerFire(false); } });
     window.addEventListener('resize', () => { cvs.width = window.innerWidth; cvs.height = window.innerHeight; });
-    
     renderStashUI(); requestAnimationFrame(gameLoop);
 }
 
-function openShop() {
-    if(!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-    if(audioCtx.state === 'suspended') audioCtx.resume();
-    document.getElementById('stashUI').classList.remove('active'); document.getElementById('shopUI').classList.add('active'); renderShopUI();
-}
+function openShop() { if(!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)(); if(audioCtx.state === 'suspended') audioCtx.resume(); document.getElementById('stashUI').classList.remove('active'); document.getElementById('shopUI').classList.add('active'); renderShopUI(); }
 function closeShop() { document.getElementById('shopUI').classList.remove('active'); document.getElementById('stashUI').classList.add('active'); renderStashUI(); }
 
 let shopFilter = 'all';
-
-function filterShop(type) {
-    shopFilter = type;
-    document.querySelectorAll('.filter-btn').forEach(btn => {
-        if(btn.id.startsWith('shop-filter')) btn.classList.remove('active');
-    });
-    document.getElementById('shop-filter-' + type).classList.add('active');
-    renderShopUI();
-}
+function filterShop(type) { shopFilter = type; document.querySelectorAll('.filter-btn').forEach(btn => { if(btn.id.startsWith('shop-filter')) btn.classList.remove('active'); }); document.getElementById('shop-filter-' + type).classList.add('active'); renderShopUI(); }
 
 function renderShopUI() {
     document.getElementById('shopMoney').innerText = pData.money;
@@ -653,8 +654,7 @@ function renderShopUI() {
     const filteredShop = shopFilter === 'all' ? SHOP_ITEMS : SHOP_ITEMS.filter(id => ITEM_DB[id].type === shopFilter);
     filteredShop.forEach(id => {
         const dbInfo = ITEM_DB[id]; const div = document.createElement('div'); div.className = `item-slot tier-${dbInfo.tier}`;
-        let ammoInfo = '';
-        if(dbInfo.type === 'weapon' && dbInfo.ammo) ammoInfo = `<div style="font-size:9px;color:#ff9800;">[${dbInfo.ammo}]</div>`;
+        let ammoInfo = ''; if(dbInfo.type === 'weapon' && dbInfo.ammo) ammoInfo = `<div style="font-size:9px;color:#ff9800;">[${dbInfo.ammo}]</div>`;
         div.innerHTML = `<div style="font-size:14px;font-weight:bold;color:#ffeb3b;letter-spacing:-1px;">${dbInfo.icon || ITEM_ICONS[dbInfo.type]}</div><div style="font-weight:bold;font-size:9px;color:#fff;">${dbInfo.name.substring(0,4)}</div><div style="color:#ffeb3b; font-weight:bold;font-size:9px;">买 ${dbInfo.val}</div>${ammoInfo}`;
         div.title = `${dbInfo.name} | 价格: ${dbInfo.val} 银币`;
         div.onclick = () => {
@@ -676,28 +676,19 @@ function renderShopUI() {
         const div = document.createElement('div'); div.className = `item-slot tier-${dbInfo.tier}`;
         div.innerHTML = `<div style="font-size:14px;font-weight:bold;color:#ffeb3b;letter-spacing:-1px;">${dbInfo.icon || ITEM_ICONS[dbInfo.type]}</div><div style="font-weight:bold;font-size:9px;color:#fff;">${dbInfo.name.substring(0,4)}</div><div style="color:#4caf50; font-weight:bold;font-size:9px;">卖 ${sellVal}</div>`;
         div.title = `${dbInfo.name} | 回收价: ${sellVal} 银币`;
-        div.onclick = () => { 
-            const origIdx = pData.stash.findIndex(i => i.id === item.id && i.dur === item.dur && i.count === item.count);
-            pData.money += sellVal; pData.stash.splice(origIdx, 1); AUDIO.playLoot(); renderShopUI(); showMsg(`出售成功，获得 ${sellVal} 银币`);
-        };
-        sellEl.appendChild(div);
+        div.onclick = () => { const origIdx = pData.stash.findIndex(i => i === item); pData.money += sellVal; pData.stash.splice(origIdx, 1); AUDIO.playLoot(); renderShopUI(); showMsg(`出售成功，获得 ${sellVal} 银币`); }; sellEl.appendChild(div);
     });
 }
 
 let stashFilter = 'all';
-
-function filterStash(type) {
-    stashFilter = type;
-    document.querySelectorAll('.filter-btn').forEach(btn => btn.classList.remove('active'));
-    document.getElementById('filter-' + type).classList.add('active');
-    renderStashUI();
-}
+function filterStash(type) { stashFilter = type; document.querySelectorAll('.filter-btn').forEach(btn => btn.classList.remove('active')); document.getElementById('filter-' + type).classList.add('active'); renderStashUI(); }
 
 function renderStashUI() {
     document.getElementById('totalMoney').innerText = pData.money;
     let wSafe = calcWeight(pData.safeBox), wBag = calcWeight(pData.backpack);
     let wEq = (pData.eqWeapon ? ITEM_DB[pData.eqWeapon.id].weight : 0) + (pData.eqArmor ? ITEM_DB[pData.eqArmor.id].weight : 0) + (pData.eqHelmet ? ITEM_DB[pData.eqHelmet.id].weight : 0);
     document.getElementById('prepWeight').innerText = (wSafe + wBag + wEq).toFixed(1);
+    document.getElementById('prepMaxWeight').innerText = getMaxWeight();
     
     document.getElementById('eqWeapon').innerHTML = pData.eqWeapon ? `<span style="color:#ffeb3b;font-size:14px;">${ITEM_DB[pData.eqWeapon.id].icon}</span> <span style="color:#fff;font-size:13px;">${ITEM_DB[pData.eqWeapon.id].name}</span> <span style="color:#888;font-size:11px;">耐${pData.eqWeapon.dur}</span>` : '<span style="color:#555;">无</span>';
     document.getElementById('eqWeapon').onclick = () => { if(pData.eqWeapon) { pData.stash.push(pData.eqWeapon); pData.eqWeapon = null; renderStashUI(); }};
@@ -708,303 +699,221 @@ function renderStashUI() {
 
     const filteredStash = stashFilter === 'all' ? pData.stash : pData.stash.filter(item => ITEM_DB[item.id].type === stashFilter);
     renderItemList(filteredStash, 'stashList', (item, idx) => {
-        const origIdx = pData.stash.findIndex(i => i.id === item.id && i.dur === item.dur && i.count === item.count);
-        const t = ITEM_DB[item.id].type;
-        if(t === 'weapon' && !pData.eqWeapon) { pData.eqWeapon = item; pData.stash.splice(origIdx,1); }
-        else if(t === 'armor' && !pData.eqArmor) { pData.eqArmor = item; pData.stash.splice(origIdx,1); }
-        else if(t === 'helmet' && !pData.eqHelmet) { pData.eqHelmet = item; pData.stash.splice(origIdx,1); }
-        else { pData.backpack.push(item); pData.stash.splice(origIdx,1); }
-        renderStashUI();
+        const origIdx = pData.stash.findIndex(i => i === item); const t = ITEM_DB[item.id].type;
+        if(t === 'weapon' && !pData.eqWeapon) { pData.eqWeapon = item; pData.stash.splice(origIdx,1); } else if(t === 'armor' && !pData.eqArmor) { pData.eqArmor = item; pData.stash.splice(origIdx,1); } else if(t === 'helmet' && !pData.eqHelmet) { pData.eqHelmet = item; pData.stash.splice(origIdx,1); } else { pData.backpack.push(item); pData.stash.splice(origIdx,1); } renderStashUI();
     });
     renderItemList(pData.safeBox, 'safeBoxList', (item, idx) => { pData.stash.push(item); pData.safeBox.splice(idx,1); renderStashUI(); });
-    renderItemList(pData.backpack, 'backpackList', (item, idx) => {
-        if(pData.safeBox.length < 4) { pData.safeBox.push(item); pData.backpack.splice(idx,1); } else { pData.stash.push(item); pData.backpack.splice(idx,1); }
-        renderStashUI();
-    });
+    renderItemList(pData.backpack, 'backpackList', (item, idx) => { if(pData.safeBox.length < 4) { pData.safeBox.push(item); pData.backpack.splice(idx,1); } else { pData.stash.push(item); pData.backpack.splice(idx,1); } renderStashUI(); });
 }
 
 function renderItemList(arr, containerId, onClickFunc) {
-    const el = document.getElementById(containerId); el.innerHTML = '';
-    if(!arr || arr.length === 0) return;
+    const el = document.getElementById(containerId); el.innerHTML = ''; if(!arr || arr.length === 0) return;
     arr.forEach((item, idx) => {
-        const dbInfo = ITEM_DB[item.id];
-        if(!dbInfo) { console.log('Missing dbInfo:', item.id); return; }
+        const dbInfo = ITEM_DB[item.id]; if(!dbInfo) return;
         const div = document.createElement('div'); div.className = `item-slot tier-${dbInfo.tier}`;
-        let ammoInfo = '';
-        if(dbInfo.type === 'weapon' && dbInfo.ammo) ammoInfo = `<div style="font-size:9px;color:#ff9800;">[${dbInfo.ammo}]</div>`;
-        let infoLine = item.count ? `x${item.count}` : `耐${item.dur||1}`;
-        const icon = dbInfo.icon || ITEM_ICONS[dbInfo.type] || '?';
+        let ammoInfo = ''; if(dbInfo.type === 'weapon' && dbInfo.ammo) ammoInfo = `<div style="font-size:9px;color:#ff9800;">[${dbInfo.ammo}]</div>`;
+        let infoLine = item.count ? `x${item.count}` : `耐${item.dur||1}`; const icon = dbInfo.icon || ITEM_ICONS[dbInfo.type] || '?';
         div.innerHTML = `<div style="font-size:14px;font-weight:bold;color:#ffeb3b;letter-spacing:-1px;">${icon}</div><div style="font-weight:bold;font-size:9px;color:#fff;word-break:break-all;">${dbInfo.name.substring(0,4)}</div><div style="color:#aaa;font-size:9px;">${infoLine}</div>${ammoInfo}`;
-        div.onclick = () => onClickFunc(item, idx); 
-        let tooltip = `${dbInfo.name}`;
-        if(dbInfo.type === 'weapon' && dbInfo.ammo) tooltip += ` | 口径: ${dbInfo.ammo}`;
-        if(dbInfo.type === 'ammo') tooltip += ` | 适配: ${dbInfo.ammo}`;
-        tooltip += ` | 价值: ${dbInfo.val} | 重量: ${dbInfo.weight}kg`;
-        div.title = tooltip; 
-        el.appendChild(div);
+        div.onclick = () => onClickFunc(item, idx); let tooltip = `${dbInfo.name} | 价值: ${dbInfo.val} | 重量: ${dbInfo.weight}kg`; div.title = tooltip; el.appendChild(div);
     });
 }
 
 function showOperatorSelect() {
-    selectedOperator = null;
-    if(!selectedDifficulty) selectDifficulty('normal');
-    document.getElementById('stashUI').classList.remove('active');
-    document.getElementById('operatorSelectUI').classList.add('active');
-    renderOperatorList();
+    selectedOperator = null; if(!selectedDifficulty) selectDifficulty('normal');
+    document.getElementById('stashUI').classList.remove('active'); document.getElementById('operatorSelectUI').classList.add('active'); renderOperatorList();
 }
-
-function closeOperatorSelect() {
-    document.getElementById('operatorSelectUI').classList.remove('active');
-    document.getElementById('stashUI').classList.add('active');
-}
-
-function selectDifficulty(diff) {
-    selectedDifficulty = diff;
-    document.querySelectorAll('.diff-btn').forEach(btn => {
-        let isSelected = btn.dataset.diff === diff;
-        btn.style.borderColor = isSelected ? DIFFICULTY[diff].color : '#555';
-        btn.style.background = isSelected ? 'rgba(255,255,255,0.1)' : '#2d2d2d';
-    });
-}
+function closeOperatorSelect() { document.getElementById('operatorSelectUI').classList.remove('active'); document.getElementById('stashUI').classList.add('active'); }
+function selectDifficulty(diff) { selectedDifficulty = diff; document.querySelectorAll('.diff-btn').forEach(btn => { let isSelected = btn.dataset.diff === diff; btn.style.borderColor = isSelected ? DIFFICULTY[diff].color : '#555'; btn.style.background = isSelected ? 'rgba(255,255,255,0.1)' : '#2d2d2d'; }); }
 
 function renderOperatorList() {
-    const list = document.getElementById('operatorList');
-    list.innerHTML = '';
+    const list = document.getElementById('operatorList'); list.innerHTML = '';
     OPERATORS.forEach(op => {
-        const div = document.createElement('div');
-        div.className = `operator-slot${op.unlocked ? '' : ' locked'}${selectedOperator && selectedOperator.id === op.id ? ' selected' : ''}`;
-        
-        let canvas = document.createElement('canvas');
-        canvas.width = 80;
-        canvas.height = 100;
-        canvas.className = 'operator-preview';
-        drawOperatorPreview(canvas, op);
-        
-        div.appendChild(canvas);
-        
-        const nameDiv = document.createElement('div');
-        nameDiv.className = 'operator-name';
-        nameDiv.innerText = op.name;
-        div.appendChild(nameDiv);
-        
-        const roleDiv = document.createElement('div');
-        roleDiv.className = 'operator-role';
-        roleDiv.innerText = op.role;
-        div.appendChild(roleDiv);
-        
-        const statsDiv = document.createElement('div');
-        statsDiv.className = 'operator-stats';
-        statsDiv.innerText = `HP:${op.stats.hp} SPD:${op.stats.speed}%`;
-        div.appendChild(statsDiv);
-        
-        if(!op.unlocked) {
-            const lockIcon = document.createElement('div');
-            lockIcon.className = 'lock-icon';
-            lockIcon.innerText = '🔒';
-            div.appendChild(lockIcon);
-        }
-        
-        div.onclick = () => {
-            if(!op.unlocked) {
-                if(pData.money >= op.cost) {
-                    if(confirm(`解锁 ${op.name} 需要 ${op.cost} 银币，是否购买？`)) {
-                        pData.money -= op.cost;
-                        op.unlocked = true;
-                        renderStashUI();
-                        renderOperatorList();
-                        showMsg(`已解锁干员: ${op.name}`);
-                    }
-                } else {
-                    showMsg(`需要 ${op.cost} 银币来解锁此干员`);
-                }
-                return;
-            }
-            selectedOperator = op;
-            renderOperatorList();
-            document.getElementById('opInfoName').innerText = `${op.name} (${op.role})`;
-            document.getElementById('opInfoDesc').innerText = op.desc;
-        };
-        
-        list.appendChild(div);
+        const div = document.createElement('div'); div.className = `operator-slot${op.unlocked ? '' : ' locked'}${selectedOperator && selectedOperator.id === op.id ? ' selected' : ''}`;
+        let canvas = document.createElement('canvas'); canvas.width = 80; canvas.height = 100; canvas.className = 'operator-preview'; drawOperatorPreview(canvas, op); div.appendChild(canvas);
+        const nameDiv = document.createElement('div'); nameDiv.className = 'operator-name'; nameDiv.innerText = op.name; div.appendChild(nameDiv);
+        const roleDiv = document.createElement('div'); roleDiv.className = 'operator-role'; roleDiv.innerText = op.role; div.appendChild(roleDiv);
+        div.onclick = () => { selectedOperator = op; renderOperatorList(); document.getElementById('opInfoName').innerText = `${op.name} (${op.role})`; document.getElementById('opInfoDesc').innerText = op.desc; }; list.appendChild(div);
     });
 }
 
 function drawOperatorPreview(canvas, op) {
-    const ctx = canvas.getContext('2d');
-    ctx.fillStyle = '#1a1a2e';
-    ctx.fillRect(0, 0, canvas.width, canvas.height);
-    
-    ctx.save();
-    ctx.translate(40, 45);
-    
-    ctx.fillStyle = op.color;
-    ctx.beginPath();
-    ctx.ellipse(0, 5, 16, 20, 0, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.strokeStyle = 'rgba(0,0,0,0.4)';
-    ctx.lineWidth = 2;
-    ctx.stroke();
-    
-    let grad = ctx.createLinearGradient(-12, 0, 12, 0);
-    grad.addColorStop(0, 'rgba(255,255,255,0.1)');
-    grad.addColorStop(0.5, 'rgba(255,255,255,0.2)');
-    grad.addColorStop(1, 'rgba(0,0,0,0.1)');
-    ctx.fillStyle = grad;
-    ctx.beginPath();
-    ctx.ellipse(0, 5, 16, 20, 0, 0, Math.PI * 2);
-    ctx.fill();
-    
-    ctx.fillStyle = op.skinTone;
-    ctx.beginPath();
-    ctx.arc(0, -12, 11, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.strokeStyle = 'rgba(0,0,0,0.3)';
-    ctx.lineWidth = 1;
-    ctx.stroke();
-    
-    ctx.fillStyle = 'rgba(0,0,0,0.7)';
-    ctx.beginPath();
-    ctx.ellipse(-4, -13, 2.5, 1.5, 0, 0, Math.PI * 2);
-    ctx.ellipse(4, -13, 2.5, 1.5, 0, 0, Math.PI * 2);
-    ctx.fill();
-    
-    ctx.strokeStyle = 'rgba(0,0,0,0.4)';
-    ctx.lineWidth = 1;
-    ctx.beginPath();
-    ctx.arc(0, -9, 4, 0.1 * Math.PI, 0.9 * Math.PI);
-    ctx.stroke();
-    
-    if(op.hasHelmet) {
-        let helmColor = op.id.includes('heavy') ? '#37474f' : (op.id.includes('sniper') ? '#5d4037' : '#455a64');
-        ctx.fillStyle = helmColor;
-        ctx.beginPath();
-        ctx.arc(0, -14, 13, Math.PI, 0);
-        ctx.fill();
-        ctx.strokeStyle = 'rgba(0,0,0,0.4)';
-        ctx.lineWidth = 1.5;
-        ctx.stroke();
-        
-        ctx.fillStyle = 'rgba(255,255,255,0.15)';
-        ctx.beginPath();
-        ctx.arc(-5, -18, 4, 0, Math.PI * 2);
-        ctx.fill();
-        
-        if(op.id.includes('heavy')) {
-            ctx.fillStyle = '#ff5722';
-            ctx.beginPath();
-            ctx.arc(0, -20, 3, 0, Math.PI * 2);
-            ctx.fill();
-        }
-    }
-    
-    if(op.hasArmor) {
-        grad = ctx.createLinearGradient(-15, 10, 15, 35);
-        grad.addColorStop(0, '#424242');
-        grad.addColorStop(0.5, '#616161');
-        grad.addColorStop(1, '#373737');
-        ctx.fillStyle = grad;
-        ctx.beginPath();
-        ctx.moveTo(-14, -2);
-        ctx.lineTo(14, -2);
-        ctx.lineTo(16, 38);
-        ctx.lineTo(-16, 38);
-        ctx.closePath();
-        ctx.fill();
-        ctx.strokeStyle = '#212121';
-        ctx.lineWidth = 2;
-        ctx.stroke();
-        
-        ctx.fillStyle = '#ff9800';
-        ctx.fillRect(-5, 5, 10, 3);
-        ctx.fillRect(-8, 12, 16, 2);
-        ctx.fillRect(-6, 18, 12, 2);
-        
-        ctx.fillStyle = '#757575';
-        ctx.fillRect(-12, 8, 4, 8);
-        ctx.fillRect(8, 8, 4, 8);
-    }
-    
-    if(op.hasBackpack) {
-        ctx.fillStyle = '#3e2723';
-        ctx.beginPath();
-        ctx.ellipse(18, 20, 6, 12, 0.2, 0, Math.PI * 2);
-        ctx.fill();
-        ctx.strokeStyle = '#5d4037';
-        ctx.lineWidth = 1;
-        ctx.stroke();
-    }
-    
-    ctx.fillStyle = 'rgba(255,255,255,0.1)';
-    ctx.beginPath();
-    ctx.ellipse(-3, 15, 8, 3, -0.3, 0, Math.PI * 2);
-    ctx.fill();
-    
+    const ctx = canvas.getContext('2d'); ctx.fillStyle = '#1a1a2e'; ctx.fillRect(0, 0, canvas.width, canvas.height); ctx.save(); ctx.translate(40, 45);
+    ctx.fillStyle = op.color; ctx.beginPath(); ctx.ellipse(0, 5, 16, 20, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = op.skinTone; ctx.beginPath(); ctx.arc(0, -12, 11, 0, Math.PI * 2); ctx.fill();
+    if(op.hasHelmet) { ctx.fillStyle = op.color; ctx.beginPath(); ctx.arc(0, -14, 13, Math.PI, 0); ctx.fill(); }
+    if(op.hasArmor) { ctx.fillStyle = '#424242'; ctx.fillRect(-14, -2, 28, 40); ctx.fillStyle = '#ff9800'; ctx.fillRect(-8, 12, 16, 2); }
     ctx.restore();
 }
 
 function confirmOperator() {
-    if(!selectedOperator) {
-        showMsg('请先选择一名干员');
-        return;
-    }
-    
-    if(selectedOperator.weapon && !pData.eqWeapon) {
-        let wItem = { id: selectedOperator.weapon.id, dur: selectedOperator.weapon.dur };
-        pData.backpack.push(wItem);
-    }
-    if(selectedOperator.armor && !pData.eqArmor) {
-        let aItem = { id: selectedOperator.armor.id, dur: selectedOperator.armor.dur };
-        pData.backpack.push(aItem);
-    }
-    if(selectedOperator.helmet && !pData.eqHelmet) {
-        let hItem = { id: selectedOperator.helmet.id, dur: selectedOperator.helmet.dur };
-        pData.backpack.push(hItem);
-    }
-    if(selectedOperator.extraItems) {
-        selectedOperator.extraItems.forEach(item => {
-            pData.backpack.push({ id: item.id, count: item.count });
-        });
-    }
-    
-    playerSkinColor = selectedOperator.skinTone;
-    playerBodyColor = selectedOperator.color;
-    
-    closeOperatorSelect();
-    startGame();
+    if(!selectedOperator) { showMsg('请先选择一名干员'); return; }
+    if(selectedOperator.weapon && !pData.eqWeapon) pData.backpack.push({ id: selectedOperator.weapon.id, dur: selectedOperator.weapon.dur });
+    if(selectedOperator.armor && !pData.eqArmor) pData.backpack.push({ id: selectedOperator.armor.id, dur: selectedOperator.armor.dur });
+    if(selectedOperator.helmet && !pData.eqHelmet) pData.backpack.push({ id: selectedOperator.helmet.id, dur: selectedOperator.helmet.dur });
+    if(selectedOperator.extraItems) selectedOperator.extraItems.forEach(item => pData.backpack.push({ id: item.id, count: item.count }));
+    playerSkinColor = selectedOperator.skinTone; playerBodyColor = selectedOperator.color; closeOperatorSelect(); startGame();
 }
 
-let playerSkinColor = '#ffcc80';
-let playerBodyColor = '#1565c0';
+let playerSkinColor = '#ffcc80'; let playerBodyColor = '#1565c0';
 
 function renderLootList(arr, containerId) {
-    const el = document.getElementById(containerId); el.innerHTML = '';
-    let totalValue = 0;
+    const el = document.getElementById(containerId); el.innerHTML = ''; let totalValue = 0; let maxW = getMaxWeight();
     arr.forEach((item, idx) => {
         const dbInfo = ITEM_DB[item.id]; const div = document.createElement('div'); div.className = `item-slot tier-${dbInfo.tier}`;
-        if (item.revealed === false) {
-            div.innerHTML = `
-                <div class="reveal-overlay">
-                    <div style="font-size:10px;color:#aaa;margin-bottom:2px;">摸索中...</div>
-                    <div class="reveal-bar-bg"><div class="reveal-bar-fill" id="reveal-fill-${idx}"></div></div>
-                </div>
-            `;
-            div.title = "未知物品，正在鉴定";
-        } else {
-            totalValue += dbInfo.val * (item.count || 1);
-            let ammoInfo = '';
-            if(dbInfo.type === 'weapon' && dbInfo.ammo) ammoInfo = `<div style="font-size:9px;color:#ff9800;">[${dbInfo.ammo}]</div>`;
+        if (item.revealed === false) { div.innerHTML = `<div class="reveal-overlay"><div style="font-size:10px;color:#aaa;margin-bottom:2px;">摸索中...</div><div class="reveal-bar-bg"><div class="reveal-bar-fill" id="reveal-fill-${idx}"></div></div></div>`; } 
+        else {
+            totalValue += dbInfo.val * (item.count || 1); let ammoInfo = ''; if(dbInfo.type === 'weapon' && dbInfo.ammo) ammoInfo = `<div style="font-size:9px;color:#ff9800;">[${dbInfo.ammo}]</div>`;
             div.innerHTML = `<div style="font-size:14px;font-weight:bold;color:#ffeb3b;letter-spacing:-1px;">${dbInfo.icon || ITEM_ICONS[dbInfo.type]}</div><div style="font-weight:bold;font-size:9px;color:#fff;">${dbInfo.name.substring(0,4)}</div><div style="color:#aaa;font-size:9px;">${item.count ? 'x'+item.count : '耐'+(item.dur||1)}</div>${ammoInfo}`;
-            div.onclick = () => {
-                if(calcWeight(pData.backpack) + dbInfo.weight <= 80) { 
-                    pData.backpack.push(item); arr.splice(idx, 1); AUDIO.playLoot(); gameState.stats.loots++; renderLootList(arr, containerId); renderLootMyBag(); updateHUD();
-                } else showMsg("严重超重，无法拾取！");
-            };
+            div.onclick = () => { if(calcWeight(pData.backpack) + dbInfo.weight <= maxW*2) { pData.backpack.push(item); arr.splice(idx, 1); AUDIO.playLoot(); gameState.stats.loots++; renderLootList(arr, containerId); renderLootMyBag(); updateHUD(); } else showMsg("超出绝对负重上限！"); };
             div.title = `${dbInfo.name} | 价值: ${dbInfo.val} | 重量: ${dbInfo.weight}`;
         }
         el.appendChild(div);
     });
-    if(containerId === 'lootContainerList') {
-        document.getElementById('lootContainerValue').innerText = totalValue.toLocaleString();
+    if(containerId === 'lootContainerList') document.getElementById('lootContainerValue').innerText = totalValue.toLocaleString();
+}
+
+function startGame() {
+    if(!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)(); if(audioCtx.state === 'suspended') audioCtx.resume();
+    killFeed = []; let sv = 0; [...pData.backpack, ...pData.safeBox, pData.eqWeapon, pData.eqArmor, pData.eqHelmet].filter(Boolean).forEach(i => sv += getItemValue(i));
+    document.getElementById('stashUI').classList.remove('active'); document.getElementById('hudUI').classList.add('active'); document.getElementById('killFeed').innerHTML = '';
+    generateMap(); initPlayerRaidState(sv);
+    gameState.inRaid = true; gameState.paused = false; gameState.isShooting = false;
+    showMsg("成功部署！按 F 搜索靠近的容器。按空格起跳。");
+}
+
+function initPlayerRaidState(startVal) {
+    player.x = 200; player.y = 200;
+    let hpMult = 1, stamMult = 1, speedMult = 1;
+    if(selectedOperator) { hpMult = selectedOperator.stats.hp / 100; stamMult = selectedOperator.stats.stam / 100; speedMult = selectedOperator.stats.speed / 100; }
+    
+    // 应用基础属性升级
+    let baseMaxHp = 100 + (pData.upgrades.hp * 20);
+    CFG.BASE_SPEED = 4 + (pData.upgrades.speed * 0.4);
+    
+    player.hp = baseMaxHp * hpMult; player.stam = CFG.PLAYER_MAX_STAM * stamMult;
+    player.maxHp = player.hp; player.maxStam = player.stam; player.baseSpeedMult = speedMult;
+    player.z = getGroundZ(player.x, player.y); player.vz = 0; player.isJumping = false; player.lastSkillTime = 0;
+    
+    player.weaponDur = pData.eqWeapon ? pData.eqWeapon.dur : 0; player.armorDur = pData.eqArmor ? pData.eqArmor.dur : 0; player.helmDur = pData.eqHelmet ? pData.eqHelmet.dur : 0;
+    player.ammoLoaded = 0; calcTotalAmmo();
+    if(pData.eqWeapon) { let mag = ITEM_DB[pData.eqWeapon.id].mag; if(player.ammoTotal >= mag) { player.ammoLoaded = mag; deductAmmo(mag); } else { player.ammoLoaded = player.ammoTotal; deductAmmo(player.ammoTotal); } }
+    gameState.timeRemain = CFG.RAID_TIME; gameState.stats = { kills: 0, loots: 0, startValue: startVal };
+    gameState.extracting = false; gameState.extractTimer = 0; gameState.searching = false;
+    updateHUD();
+}
+
+function generateMap() {
+    mapEntities = { platforms: [], walls: [], containers: [], enemies: [], bullets: [], particles: [], extracts: [], corpses: [], smokeGrenades: [], c4s: [], fields: [] };
+    
+    // 墙体 (阻挡移动与视线)
+    mapEntities.walls.push(
+        {x:-100, y:-100, w:CFG.MAP_W+200, h:150}, {x:-100, y:CFG.MAP_H-50, w:CFG.MAP_W+200, h:150},
+        {x:-100, y:-100, w:150, h:CFG.MAP_H+200}, {x:CFG.MAP_W-50, y:-100, w:150, h:CFG.MAP_H+200}
+    );
+    
+    // 生成建筑墙壁和跳跃平台
+    let buildingCount = randInt(25, 40);
+    for(let i=0; i<buildingCount; i++) {
+        let w = randInt(150, 350), h = randInt(150, 350), x = randInt(100, CFG.MAP_W - w - 100), y = randInt(100, CFG.MAP_H - h - 100);
+        if(x<400 && y<400) continue; 
+        
+        if(Math.random() < 0.3) {
+            // 生成不可跨越的高墙
+            mapEntities.walls.push({x, y, w, h: 40}); // 视觉上不需要太厚
+        } else {
+            // 生成平台
+            let isTall = Math.random() < 0.4;
+            let zHeight = isTall ? 80 : 40; 
+            let platColor = isTall ? '#455a64' : '#5d4037';
+            mapEntities.platforms.push({x, y, w, h, z: zHeight, color: platColor});
+        }
     }
+    
+    let containerTypes = ['box', 'weapon_case', 'safe', 'ammo_crate', 'medical_box', 'locker'];
+    let containerWeights = { box: 0.35, weapon_case: 0.2, safe: 0.1, ammo_crate: 0.15, medical_box: 0.12, locker: 0.08 };
+    for(let i=0; i<CFG.CONTAINER_COUNT; i++) {
+        let x = randInt(100, CFG.MAP_W-100), y = randInt(100, CFG.MAP_H-100);
+        // 避开墙体
+        let inWall = false; for(let w of mapEntities.walls) { if(x>w.x-40 && x<w.x+w.w && y>w.y-40 && y<w.y+w.h) inWall = true; }
+        if(inWall) continue;
+        
+        let r = Math.random(), cType;
+        if(r < containerWeights.box) cType = 'box'; else if(r < containerWeights.box + containerWeights.weapon_case) cType = 'weapon_case'; else if(r < containerWeights.box + containerWeights.weapon_case + containerWeights.safe) cType = 'safe'; else if(r < containerWeights.box + containerWeights.weapon_case + containerWeights.safe + containerWeights.ammo_crate) cType = 'ammo_crate'; else if(r < containerWeights.box + containerWeights.weapon_case + containerWeights.safe + containerWeights.ammo_crate + containerWeights.medical_box) cType = 'medical_box'; else cType = 'locker';
+        let cSize = cType === 'safe' ? 35 : (cType === 'ammo_crate' ? 50 : 40);
+        let z = getGroundZ(x+cSize/2, y+cSize/2);
+        mapEntities.containers.push({ x, y, z, w: cSize, h: cSize, type: cType, items: generateLoot(cType), opened: false, searched: false });
+    }
+    
+    mapEntities.extracts.push({x: CFG.MAP_W - 250, y: CFG.MAP_H - 250, r: 120, type: 'safe', name: '安全撤离'}, {x: CFG.MAP_W - 250, y: 250, r: 100, type: 'hot', name: '危险撤离'}, {x: 250, y: CFG.MAP_H - 250, r: 100, type: 'hot', name: '危险撤离'});
+    spawnEnemies(Math.floor(CFG.ENEMY_COUNT * DIFFICULTY[selectedDifficulty].enemyCountMult));
+}
+
+function generateLoot(containerType) {
+    let items = [], num = randInt(1, 4), pool = Object.keys(ITEM_DB);
+    for(let i=0; i<num; i++) {
+        let randKey = pool[randInt(0, pool.length-1)]; let dbItem = ITEM_DB[randKey];
+        if(containerType === 'safe') { if(dbItem.tier < 2) continue; } else if(containerType === 'weapon_case') { if(dbItem.type !== 'weapon') continue; } else if(containerType === 'ammo_crate') { if(dbItem.type !== 'ammo') continue; } else if(containerType === 'medical_box') { if(dbItem.type !== 'med') continue; } else if(containerType === 'locker') { if(dbItem.type !== 'weapon' && dbItem.type !== 'armor' && dbItem.type !== 'helmet') continue; } else { if(dbItem.tier > 3) continue; } 
+        let itm = {id: randKey, revealed: false}; if(dbItem.type === 'weapon') itm.dur = dbItem.dur; if(dbItem.type === 'armor' || dbItem.type === 'helmet') itm.dur = dbItem.maxDur; if(dbItem.type === 'ammo') itm.count = randInt(10, dbItem.count); items.push(itm);
+    } return items;
+}
+
+function spawnEnemies(count) {
+    const diff = DIFFICULTY[selectedDifficulty]; const types = ['patrol', 'assault', 'sniper', 'heavy']; const typeWeights = { patrol: 0.35, assault: 0.3, sniper: 0.2, heavy: 0.15 };
+    for(let i=0; i<count; i++) {
+        let r = Math.random(); let type = r < typeWeights.patrol ? 'patrol' : (r < typeWeights.patrol + typeWeights.assault ? 'assault' : (r < typeWeights.patrol + typeWeights.assault + typeWeights.sniper ? 'sniper' : 'heavy'));
+        let x = randInt(500, CFG.MAP_W-100); let y = randInt(500, CFG.MAP_H-100); let z = getGroundZ(x, y);
+        let inWall = false; for(let w of mapEntities.walls) { if(x>w.x-20 && x<w.x+w.w+20 && y>w.y-20 && y<w.y+w.h+20) inWall = true; } if(inWall) continue;
+        let hpMult = diff.enemySpeedMult > 1 ? 1.2 : 0.8; let hp = Math.floor((type === 'heavy' ? 250 : (type === 'sniper' ? 90 : 100)) * hpMult);
+        let wId = 'w_smg'; if(type === 'sniper') wId = Math.random() > 0.5 ? 'w_sniper' : 'w_dmr'; else if(type === 'heavy') wId = Math.random() > 0.4 ? (Math.random() > 0.5 ? 'w_ak' : 'w_fal') : 'w_lmg'; else if(type === 'assault') wId = Math.random() > 0.4 ? (Math.random() > 0.5 ? 'w_ar' : 'w_aug') : (Math.random() > 0.5 ? 'w_ak' : 'w_fal'); else wId = Math.random() > 0.5 ? (Math.random() > 0.5 ? 'w_smg' : 'w_vector') : 'w_shotgun';
+        let wData = ITEM_DB[wId]; let accuracy = type === 'sniper' ? 0.88 : (type === 'heavy' ? 0.65 : 0.72); if(selectedDifficulty === 'topsecret') accuracy += 0.08;
+        let moveSpeed = type === 'heavy' ? 1.5 : (type === 'sniper' ? 1.8 : 2.5); moveSpeed *= diff.enemySpeedMult;
+        let alertR = type === 'sniper' ? 450 : (type === 'heavy' ? 250 : 300);
+        mapEntities.enemies.push({ x, y, z, vz: 0, r:15, hp, maxHp: hp, type, state: 'idle', targetX:x, targetY:y, lastFire: 0, weaponId: wId, mag: wData.mag, ammoLoaded: wData.mag, reloading: false, reloadTimer: 0, accuracy: accuracy, patrolPoint: {x, y}, alertLevel: 0, moveSpeed: moveSpeed, fireRateMult: diff.enemyFireRateMult, dmgMult: diff.enemyDmgMult, alertRadius: alertR, chaseRadius: alertR * 1.5 });
+    }
+}
+
+function handleKeyPress(key) {
+    if(!gameState.inRaid) return;
+    if(key === 'escape') { if(document.getElementById('lootUI').classList.contains('active')) closeLoot(); else if(document.getElementById('inventoryUI').classList.contains('active')) closeInventory(); else { gameState.paused = !gameState.paused; showMsg(gameState.paused ? "游戏已暂停" : "继续游戏"); } }
+    if(gameState.paused) return;
+    if(key === 'tab') { const inv = document.getElementById('inventoryUI'); if(inv.classList.contains('active')) closeInventory(); else openInventory(); }
+    if(key === 'f') tryLoot(); if(key === 'r') reloadWeapon(); if(key === 'e') useMed(); if(key === 'g') throwGrenade();
+    if(key === 'q') useOperatorSkill(); 
+}
+
+function useOperatorSkill() {
+    if(!selectedOperator || !selectedOperator.skill) return;
+    let now = Date.now();
+    if(player.lastSkillTime && (now - player.lastSkillTime) / 1000 < selectedOperator.cooldown) { showMsg("技能冷却中！"); return; }
+
+    let crossX = gameState.mouseX + gameState.camera.x;
+    let crossY = gameState.mouseY + gameState.camera.y;
+    let angle = Math.atan2(crossY - (player.y - player.z), crossX - player.x);
+    
+    if(selectedOperator.skill === 'c4') {
+        // 威龙：近距离，大范围
+        let rawDist = dist(player.x, player.y, crossX, crossY);
+        let throwDist = Math.min(rawDist, 100); 
+        let targetX = player.x + Math.cos(angle) * throwDist; 
+        let targetY = player.y + Math.sin(angle) * throwDist;
+        mapEntities.c4s.push({x: targetX, y: targetY, z: getGroundZ(targetX, targetY), timer: 2, radius: 350, dmg: 1000});
+        showMsg("威龙：短距致命C4部署！");
+    } else if(selectedOperator.skill === 'handcannon') {
+        // 红狼：快距离，小范围
+        let targetZ = getGroundZ(crossX, crossY);
+        let distToMouse = dist(player.x, player.y, crossX, crossY) || 1;
+        let vz = (targetZ - (player.z + 15)) / (distToMouse / 40);
+        mapEntities.bullets.push({ x: player.x, y: player.y, z: player.z+15, dx: Math.cos(angle) * 40, dy: Math.sin(angle) * 40, dz: vz, dmg: 0, isPlayer: true, isHandcannon: true, trail: [] });
+        AUDIO.playShoot('w_shotgun'); showMsg("红狼：高爆速射手炮！");
+    } else if(selectedOperator.skill === 'electric_arrow') {
+        let targetZ = getGroundZ(crossX, crossY);
+        let distToMouse = dist(player.x, player.y, crossX, crossY) || 1;
+        let vz = (targetZ - (player.z + 15)) / (distToMouse / 35);
+        mapEntities.bullets.push({ x: player.x, y: player.y, z: player.z+15, dx: Math.cos(angle) * 35, dy: Math.sin(angle) * 35, dz: vz, dmg: 0, isPlayer: true, isElectricArrow: true, trail: [] });
+        AUDIO.playShoot('w_sniper'); showMsg("露娜：电击箭出击！");
+    } else if(selectedOperator.skill === 'heal') {
+        player.hp = Math.min(player.maxHp, player.hp + 50); player.stam = player.maxStam; AUDIO.playHeal(); showMsg("蜂医：激素注射！");
+    }
+    player.lastSkillTime = now; updateHUD();
 }
 
